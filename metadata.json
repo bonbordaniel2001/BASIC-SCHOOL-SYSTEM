@@ -1,0 +1,6 @@
+{
+  "name": "ST TALAFOR ACCADEMY",
+  "description": "Ghanaian Primary & JHS School Management System with Proprietor, Teacher, and Guardian Portal view modes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

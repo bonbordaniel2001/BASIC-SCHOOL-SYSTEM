@@ -1,0 +1,1833 @@
+package com.example.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.data.model.AttendanceRecord
+import com.example.data.model.ClockInLog
+import com.example.data.model.LessonPlan
+import com.example.data.model.StudentGrade
+import com.example.ui.theme.GhanaEmeraldGreen
+import com.example.ui.theme.GhanaGoldAccent
+import com.example.ui.theme.GhanaGreenContainer
+import com.example.ui.theme.GhanaNavyPrimary
+import com.example.ui.viewmodel.SchoolViewModel
+import com.example.ui.viewmodel.SimulatedGeofenceState
+
+data class StudentMatrixData(
+    val studentId: Long,
+    val name: String,
+    val className: String,
+    val term1Avg: Double?,
+    val term2Avg: Double?,
+    val term3Avg: Double?,
+    val overallCumulativeAvg: Double,
+    val totalSubjectEntries: Int,
+    val topGradeLetter: String
+)
+
+@Composable
+fun TeacherScreen(
+    viewModel: SchoolViewModel,
+    modifier: Modifier = Modifier
+) {
+    val selectedClass by viewModel.selectedClass.collectAsState()
+    val attendanceList by viewModel.attendanceList.collectAsState()
+    val clockInLogs by viewModel.allClockInLogs.collectAsState()
+    val simState by viewModel.simulatedLocationState.collectAsState()
+
+    val isOnline by viewModel.isOnline.collectAsState()
+    val isSyncing by viewModel.isSyncing.collectAsState()
+    val unsyncedCount by viewModel.unsyncedCount.collectAsState()
+
+    val currentDistance = viewModel.currentDistanceMeters
+    val isWithinGeofence = viewModel.isWithinGeofence
+
+    // Compute weekly class attendance statistics
+    val totalPossibleDays = attendanceList.size * 5
+    val totalAbsences = attendanceList.sumOf { record ->
+        listOf(record.mondayStatus, record.tuesdayStatus, record.wednesdayStatus, record.thursdayStatus, record.fridayStatus)
+            .count { it == "ABSENT" }
+    }
+    val attendancePercentage = if (totalPossibleDays > 0) {
+        ((totalPossibleDays - totalAbsences).toDouble() / totalPossibleDays) * 100
+    } else 100.0
+
+    val mostAbsentStudent = attendanceList.maxByOrNull { record ->
+        listOf(record.mondayStatus, record.tuesdayStatus, record.wednesdayStatus, record.thursdayStatus, record.fridayStatus)
+            .count { it == "ABSENT" }
+    }
+
+    val allGrades by viewModel.allGrades.collectAsState()
+    val studentLedgers by viewModel.allStudentLedgers.collectAsState()
+    val allLessonPlans by viewModel.allLessonPlans.collectAsState()
+
+    var activeTeacherTab by remember { mutableStateOf(0) } // 0: Attendance Register, 1: Gradebook & Marks Entry, 2: Daily Lesson Plans
+    var selectedGradeSubject by remember { mutableStateOf("Mathematics") }
+    var selectedGradeClass by remember { mutableStateOf("JHS 2 - Gold") }
+    var selectedGradeTerm by remember { mutableStateOf("Term 1") } // "Term 1", "Term 2", "Term 3", "All Terms / Cumulative"
+    var gradebookViewMode by remember { mutableStateOf(0) } // 0: Subject Marksheet, 1: Cumulative Class Matrix Report
+
+    var showGradeEntryDialog by remember { mutableStateOf(false) }
+    var targetGradeStudentId by remember { mutableStateOf(101L) }
+    var targetGradeStudentName by remember { mutableStateOf("Ama Serwaa Mensah") }
+    var targetGradeTerm by remember { mutableStateOf("Term 1") }
+    var targetGradeSubject by remember { mutableStateOf("Mathematics") }
+    var inputClassScore by remember { mutableStateOf("28.0") }
+    var inputExamScore by remember { mutableStateOf("64.0") }
+    var inputTeacherRemarks by remember { mutableStateOf("Good academic progress and active participation.") }
+
+    // Teacher Request Add Student State
+    var showRequestAddStudentDialog by remember { mutableStateOf(false) }
+    var inputReqStudentName by remember { mutableStateOf("") }
+    var inputReqStudentClass by remember { mutableStateOf("JHS 2 - Gold") }
+    var inputReqGuardianPhone by remember { mutableStateOf("0244123456") }
+    var inputReqEstimatedFees by remember { mutableStateOf("1200.0") }
+    var inputReqReason by remember { mutableStateOf("New transfer student joining class.") }
+
+    // Request Add Student Dialog
+    if (showRequestAddStudentDialog) {
+        AlertDialog(
+            onDismissRequest = { showRequestAddStudentDialog = false },
+            title = {
+                Column {
+                    Text("Register New Student", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("Requires Proprietor Permission & Approval", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = inputReqStudentName,
+                        onValueChange = { inputReqStudentName = it },
+                        label = { Text("Student Full Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("teacher_req_student_name_field")
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = inputReqStudentClass,
+                            onValueChange = { inputReqStudentClass = it },
+                            label = { Text("Class") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("teacher_req_student_class_field")
+                        )
+
+                        OutlinedTextField(
+                            value = inputReqGuardianPhone,
+                            onValueChange = { inputReqGuardianPhone = it },
+                            label = { Text("Guardian Phone") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("teacher_req_guardian_phone_field")
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = inputReqEstimatedFees,
+                        onValueChange = { inputReqEstimatedFees = it },
+                        label = { Text("Estimated Term Fees (GH₵)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("teacher_req_fees_field")
+                    )
+
+                    OutlinedTextField(
+                        value = inputReqReason,
+                        onValueChange = { inputReqReason = it },
+                        label = { Text("Reason / Remarks for Proprietor") },
+                        modifier = Modifier.fillMaxWidth().testTag("teacher_req_reason_field")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (inputReqStudentName.isNotBlank()) {
+                            viewModel.submitTeacherAddStudentRequest(
+                                studentName = inputReqStudentName,
+                                className = inputReqStudentClass,
+                                guardianPhone = inputReqGuardianPhone,
+                                feesGhc = inputReqEstimatedFees.toDoubleOrNull() ?: 1200.0,
+                                reason = inputReqReason
+                            )
+                            showRequestAddStudentDialog = false
+                            inputReqStudentName = ""
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                    modifier = Modifier.testTag("submit_teacher_req_student_button")
+                ) {
+                    Text("Send Request to Proprietor")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRequestAddStudentDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Daily Lesson Plan Form & Filter State
+    var showCreateLessonPlanDialog by remember { mutableStateOf(false) }
+    var inputPlanClass by remember { mutableStateOf("JHS 2 - Gold") }
+    var inputPlanSubject by remember { mutableStateOf("Mathematics") }
+    var inputPlanTopic by remember { mutableStateOf("") }
+    var inputPlanSubtopic by remember { mutableStateOf("") }
+    var inputPlanDate by remember { mutableStateOf("2026-07-28") }
+    var inputPlanDuration by remember { mutableStateOf("60") }
+    var inputPlanObjectives by remember { mutableStateOf("") }
+    var inputPlanMaterials by remember { mutableStateOf("Textbooks, Whiteboard, Model Charts") }
+    var inputPlanProcedure by remember { mutableStateOf("1. Introduction & Previous Lesson Review (10 mins)\n2. Main Instructional Presentation (25 mins)\n3. Pair Work & Problem Solving Activity (15 mins)\n4. Summary & Exit Ticket Evaluation (10 mins)") }
+
+    var selectedPlanFilterSubject by remember { mutableStateOf("All") }
+    var selectedPlanFilterClass by remember { mutableStateOf("All") }
+
+    val subjectsList = listOf("Mathematics", "English Language", "Integrated Science", "Social Studies", "ICT", "RME")
+    val classesList = listOf("JHS 2 - Gold", "Primary 6", "Primary 4")
+
+    // Create Lesson Plan Dialog
+    if (showCreateLessonPlanDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateLessonPlanDialog = false },
+            title = {
+                Column {
+                    Text("Upload Daily Lesson Plan", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("Submit for Management Review & Approval", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Target Class:", style = MaterialTheme.typography.labelSmall)
+                            OutlinedTextField(
+                                value = inputPlanClass,
+                                onValueChange = { inputPlanClass = it },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("input_plan_class_field")
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Subject:", style = MaterialTheme.typography.labelSmall)
+                            OutlinedTextField(
+                                value = inputPlanSubject,
+                                onValueChange = { inputPlanSubject = it },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("input_plan_subject_field")
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = inputPlanTopic,
+                        onValueChange = { inputPlanTopic = it },
+                        label = { Text("Lesson Topic (e.g. Quadratic Equations)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("input_plan_topic_field")
+                    )
+
+                    OutlinedTextField(
+                        value = inputPlanSubtopic,
+                        onValueChange = { inputPlanSubtopic = it },
+                        label = { Text("Sub-Topic / Specific Area") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("input_plan_subtopic_field")
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = inputPlanDate,
+                            onValueChange = { inputPlanDate = it },
+                            label = { Text("Lesson Date") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("input_plan_date_field")
+                        )
+                        OutlinedTextField(
+                            value = inputPlanDuration,
+                            onValueChange = { inputPlanDuration = it },
+                            label = { Text("Duration (Mins)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("input_plan_duration_field")
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = inputPlanObjectives,
+                        onValueChange = { inputPlanObjectives = it },
+                        label = { Text("Learning Objectives & Expected Outcomes") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_plan_objectives_field")
+                    )
+
+                    OutlinedTextField(
+                        value = inputPlanMaterials,
+                        onValueChange = { inputPlanMaterials = it },
+                        label = { Text("Teaching Materials / Lab Equipment") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_plan_materials_field")
+                    )
+
+                    OutlinedTextField(
+                        value = inputPlanProcedure,
+                        onValueChange = { inputPlanProcedure = it },
+                        label = { Text("Lesson Procedure & Time Allocation") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_plan_procedure_field")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (inputPlanTopic.isBlank() || inputPlanObjectives.isBlank()) {
+                            return@Button
+                        }
+                        viewModel.createLessonPlan(
+                            className = inputPlanClass,
+                            subject = inputPlanSubject,
+                            topic = inputPlanTopic,
+                            subTopic = inputPlanSubtopic,
+                            lessonDate = inputPlanDate,
+                            durationMinutes = inputPlanDuration.toIntOrNull() ?: 60,
+                            objectives = inputPlanObjectives,
+                            materials = inputPlanMaterials,
+                            procedure = inputPlanProcedure
+                        )
+                        showCreateLessonPlanDialog = false
+                        inputPlanTopic = ""
+                        inputPlanSubtopic = ""
+                        inputPlanObjectives = ""
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                    modifier = Modifier.testTag("submit_lesson_plan_button")
+                ) {
+                    Text("Submit Lesson Plan")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateLessonPlanDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Grade Entry Dialog for Teacher
+    if (showGradeEntryDialog) {
+        val dialogTermsList = listOf("Term 1", "Term 2", "Term 3")
+
+        AlertDialog(
+            onDismissRequest = { showGradeEntryDialog = false },
+            title = {
+                Column {
+                    Text("Grade & Marks Entry", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("$targetGradeStudentName • $targetGradeSubject ($selectedGradeClass)", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Term Selector Chips
+                    Text("1. Academic Term:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        dialogTermsList.forEach { term ->
+                            FilterChip(
+                                selected = targetGradeTerm == term,
+                                onClick = { targetGradeTerm = term },
+                                label = { Text(term, fontSize = 11.sp) },
+                                modifier = Modifier.testTag("dialog_term_chip_$term")
+                            )
+                        }
+                    }
+
+                    // Subject Selector Chips
+                    Text("2. Academic Subject:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        subjectsList.take(3).forEach { sub ->
+                            FilterChip(
+                                selected = targetGradeSubject == sub,
+                                onClick = { targetGradeSubject = sub },
+                                label = { Text(sub, fontSize = 10.sp) },
+                                modifier = Modifier.testTag("dialog_subject_chip_$sub")
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        subjectsList.drop(3).forEach { sub ->
+                            FilterChip(
+                                selected = targetGradeSubject == sub,
+                                onClick = { targetGradeSubject = sub },
+                                label = { Text(sub, fontSize = 10.sp) },
+                                modifier = Modifier.testTag("dialog_subject_chip_$sub")
+                            )
+                        }
+                    }
+
+                    Text("3. Assessment Marks:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = inputClassScore,
+                            onValueChange = { inputClassScore = it },
+                            label = { Text("Class CA (30/40)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("input_class_score_field")
+                        )
+                        OutlinedTextField(
+                            value = inputExamScore,
+                            onValueChange = { inputExamScore = it },
+                            label = { Text("Final Exam (70/60)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("input_exam_score_field")
+                        )
+                    }
+
+                    val classVal = inputClassScore.toDoubleOrNull() ?: 0.0
+                    val examVal = inputExamScore.toDoubleOrNull() ?: 0.0
+                    val totalVal = (classVal + examVal).coerceIn(0.0, 100.0)
+                    val letterVal = when {
+                        totalVal >= 80.0 -> "A1 (Excellent)"
+                        totalVal >= 75.0 -> "B2 (Very Good)"
+                        totalVal >= 70.0 -> "B3 (Good)"
+                        totalVal >= 65.0 -> "C4 (Credit)"
+                        totalVal >= 60.0 -> "C5 (Credit)"
+                        totalVal >= 55.0 -> "C6 (Credit)"
+                        totalVal >= 50.0 -> "D7 (Pass)"
+                        totalVal >= 45.0 -> "E8 (Pass)"
+                        else -> "F9 (Fail)"
+                    }
+
+                    // Live Student Cumulative Average Impact Calculation
+                    val existingStudentGrades = allGrades.filter {
+                        it.studentId == targetGradeStudentId &&
+                        !(it.subject.equals(targetGradeSubject, ignoreCase = true) && it.academicTerm == targetGradeTerm)
+                    }
+                    val currentAvg = if (existingStudentGrades.isNotEmpty()) existingStudentGrades.map { it.totalScore }.average() else 0.0
+                    val newScoresList = existingStudentGrades.map { it.totalScore } + totalVal
+                    val predictedAvg = newScoresList.average()
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Calculated Term Mark:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("${String.format("%.1f", totalVal)}% ($letterVal)", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Predicted Student Cumulative Avg:", fontSize = 11.sp)
+                                Text("${String.format("%.1f", predictedAvg)}%", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = GhanaNavyPrimary)
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = inputTeacherRemarks,
+                        onValueChange = { inputTeacherRemarks = it },
+                        label = { Text("Teacher Remarks / Guidance") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_teacher_remarks_field")
+                    )
+
+                    // Quick Remarks Presets
+                    Text("Preset Remarks:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf("Exceptional progress.", "Consistent effort.", "Needs extra math practice.").forEach { remark ->
+                            SuggestionChip(
+                                onClick = { inputTeacherRemarks = remark },
+                                label = { Text(remark, fontSize = 9.sp) },
+                                modifier = Modifier.testTag("preset_remark_$remark")
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val classScore = inputClassScore.toDoubleOrNull() ?: 0.0
+                        val examScore = inputExamScore.toDoubleOrNull() ?: 0.0
+                        viewModel.saveOrUpdateStudentGrade(
+                            studentId = targetGradeStudentId,
+                            studentName = targetGradeStudentName,
+                            className = selectedGradeClass,
+                            subject = targetGradeSubject,
+                            term = targetGradeTerm,
+                            academicYear = "2025/2026",
+                            classScore = classScore,
+                            examScore = examScore,
+                            remarks = inputTeacherRemarks
+                        )
+                        showGradeEntryDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                    modifier = Modifier.testTag("save_student_grade_button")
+                ) {
+                    Text("Publish Grade")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGradeEntryDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp)
+    ) {
+        // --- TOP TAB ROW FOR TEACHER (Attendance vs Gradebook vs Lesson Plans) ---
+        item {
+            TabRow(
+                selectedTabIndex = activeTeacherTab,
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+            ) {
+                Tab(
+                    selected = activeTeacherTab == 0,
+                    onClick = { activeTeacherTab = 0 },
+                    text = { Text("Attendance", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.HowToReg, contentDescription = null) },
+                    modifier = Modifier.testTag("teacher_tab_attendance")
+                )
+                Tab(
+                    selected = activeTeacherTab == 1,
+                    onClick = { activeTeacherTab = 1 },
+                    text = { Text("Gradebook", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.School, contentDescription = null) },
+                    modifier = Modifier.testTag("teacher_tab_gradebook")
+                )
+                Tab(
+                    selected = activeTeacherTab == 2,
+                    onClick = { activeTeacherTab = 2 },
+                    text = { Text("Lesson Plans", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Description, contentDescription = null) },
+                    modifier = Modifier.testTag("teacher_tab_lesson_plans")
+                )
+            }
+        }
+
+        if (activeTeacherTab == 0) {
+        // --- SECTION 1: GEOFENCED CLOCK-IN PANEL ---
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("geofenced_clock_in_card")
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isWithinGeofence) GhanaGreenContainer else Color(0xFFF8D7DA)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isWithinGeofence) Icons.Default.GpsFixed else Icons.Default.GpsOff,
+                                    contentDescription = null,
+                                    tint = if (isWithinGeofence) GhanaEmeraldGreen else Color(0xFF842029),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = "Geofenced Staff Clock-In",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Akoma Campus GPS (5.6037° N, 0.1870° W)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // Simulation mode switcher button to test both inside & outside geofence
+                        OutlinedButton(
+                            onClick = {
+                                if (simState == SimulatedGeofenceState.ON_CAMPUS_INSIDE_GEOFENCE) {
+                                    viewModel.setSimulatedLocation(SimulatedGeofenceState.OUTSIDE_GEOFENCE)
+                                } else {
+                                    viewModel.setSimulatedLocation(SimulatedGeofenceState.ON_CAMPUS_INSIDE_GEOFENCE)
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.testTag("toggle_geofence_simulation")
+                        ) {
+                            Text(
+                                text = if (isWithinGeofence) "Simulate Out" else "Simulate In",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Location Status Box
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isWithinGeofence) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = if (isWithinGeofence) "GEOFENCE UNLOCKED" else "OUTSIDE CAMPUS BOUNDARY",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isWithinGeofence) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                )
+                                Text(
+                                    text = "Current Distance: ${currentDistance.toInt()}m from school center (Max: 200m)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            Icon(
+                                imageVector = if (isWithinGeofence) Icons.Default.CheckCircle else Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = if (isWithinGeofence) Color(0xFF2E7D32) else Color(0xFFC62828)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Clock-In Submit Button (Enabled ONLY when inside Geofence)
+                    Button(
+                        onClick = { viewModel.submitClockInOrOut("CLOCK_IN") },
+                        enabled = isWithinGeofence,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("clock_in_button")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.AccessTime, contentDescription = null)
+                            Text(
+                                text = if (isWithinGeofence) "Clock-In to Akoma Campus" else "Clock-In Locked (Get Closer to Campus)",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    if (clockInLogs.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Last Clock-In: ${clockInLogs.first().timestampString} (${clockInLogs.first().distanceMeters.toInt()}m)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // --- SECTION 2: WEEKLY CLASS ATTENDANCE REGISTER MATRIX ---
+        item {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Offline Register Sync & Network Status Control
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isOnline) Color(0xFFE8F5E9) else Color(0xFFFFF3CD)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("offline_attendance_sync_card")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isOnline) GhanaEmeraldGreen else Color(0xFF856404)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isOnline) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = if (isOnline) "ONLINE REGISTER (AUTO-SYNC)" else "OFFLINE MODE ACTIVE",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isOnline) Color(0xFF0F5132) else Color(0xFF856404)
+                                )
+                                Text(
+                                    text = if (unsyncedCount > 0) "$unsyncedCount attendance record(s) pending sync" else "All local records synced to cloud",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.toggleNetworkConnectivity() },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.testTag("toggle_network_offline_button")
+                            ) {
+                                Text(
+                                    text = if (isOnline) "Simulate Offline" else "Go Online",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Button(
+                                onClick = { viewModel.syncOfflineAttendance() },
+                                enabled = isOnline && unsyncedCount > 0 && !isSyncing,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                modifier = Modifier.testTag("sync_offline_attendance_button")
+                            ) {
+                                if (isSyncing) {
+                                    CircularProgressIndicator(
+                                        color = Color.White,
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Text("Sync ($unsyncedCount)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Weekly Attendance Register",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Automated weekly total absenteeism matrix",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Button(
+                        onClick = { showRequestAddStudentDialog = true },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                        modifier = Modifier.testTag("teacher_request_add_student_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("+ Add Student (Proprietor Approval)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                    // Class Selector Dropdown / Chips
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("JHS 2 - Gold", "Primary 6", "Primary 4").forEach { className ->
+                            FilterChip(
+                                selected = selectedClass == className,
+                                onClick = { viewModel.setSelectedClass(className) },
+                                label = { Text(className.take(8), fontSize = 11.sp) },
+                                modifier = Modifier.testTag("select_class_$className")
+                            )
+                        }
+                    }
+                }
+
+                // Class Overview Summary Card
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Weekly Class Rate",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "${String.format("%.1f", attendancePercentage)}%",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        if (mostAbsentStudent != null) {
+                            val count = listOf(
+                                mostAbsentStudent.mondayStatus, mostAbsentStudent.tuesdayStatus,
+                                mostAbsentStudent.wednesdayStatus, mostAbsentStudent.thursdayStatus, mostAbsentStudent.fridayStatus
+                            ).count { it == "ABSENT" }
+
+                            if (count > 0) {
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "High Absenteeism Alert",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    Text(
+                                        text = "${mostAbsentStudent.studentName} ($count days absent)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = { viewModel.markAllPresentToday("Wed") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.testTag("mark_all_present_button")
+                        ) {
+                            Text("All Present Today", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Attendance Table Header
+        item {
+            Card(
+                shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp),
+                colors = CardDefaults.cardColors(containerColor = GhanaNavyPrimary),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Student Name",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.weight(2.2f)
+                    )
+                    Text("M", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = GhanaGoldAccent, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    Text("T", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = GhanaGoldAccent, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    Text("W", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = GhanaGoldAccent, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    Text("T", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = GhanaGoldAccent, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    Text("F", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = GhanaGoldAccent, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    Text("Abs", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.weight(1.2f))
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                attendanceList.forEach { record ->
+                    val weeklyAbsences = listOf(
+                        record.mondayStatus, record.tuesdayStatus, record.wednesdayStatus, record.thursdayStatus, record.fridayStatus
+                    ).count { it == "ABSENT" }
+
+                    AttendanceRow(
+                        record = record,
+                        weeklyAbsenceCount = weeklyAbsences,
+                        onToggleDay = { day -> viewModel.toggleDailyAttendance(record, day) }
+                    )
+                }
+            }
+        }
+        if (activeTeacherTab == 1) {
+        // --- SECTION: ACADEMIC GRADEBOOK, MARKS ENTRY & CUMULATIVE REPORT CARDS ---
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("gradebook_filter_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Gradebook Filter & Academic Setup",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Class Selection Chips
+                        Text("1. Target Class:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            classesList.forEach { cls ->
+                                FilterChip(
+                                    selected = selectedGradeClass == cls,
+                                    onClick = { selectedGradeClass = cls },
+                                    label = { Text(cls, fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("class_chip_$cls")
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Academic Term Selection Chips
+                        Text("2. Academic Term:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("Term 1", "Term 2", "Term 3", "All Terms / Cumulative").forEach { term ->
+                                FilterChip(
+                                    selected = selectedGradeTerm == term,
+                                    onClick = { selectedGradeTerm = term },
+                                    label = { Text(term, fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("term_chip_$term")
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Subject Selection Chips
+                        Text("3. Academic Subject:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            subjectsList.take(3).forEach { sub ->
+                                FilterChip(
+                                    selected = selectedGradeSubject == sub,
+                                    onClick = { selectedGradeSubject = sub },
+                                    label = { Text(sub, fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("subject_chip_$sub")
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            subjectsList.drop(3).forEach { sub ->
+                                FilterChip(
+                                    selected = selectedGradeSubject == sub,
+                                    onClick = { selectedGradeSubject = sub },
+                                    label = { Text(sub, fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("subject_chip_$sub")
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Cumulative Analytics Summary Header Banner
+            val classGrades = allGrades.filter {
+                it.className == selectedGradeClass &&
+                (selectedGradeTerm == "All Terms / Cumulative" || it.academicTerm == selectedGradeTerm)
+            }
+            val classAvg = if (classGrades.isNotEmpty()) classGrades.map { it.totalScore }.average() else 0.0
+            val passRate = if (classGrades.isNotEmpty()) (classGrades.count { it.totalScore >= 50.0 }.toDouble() / classGrades.size * 100) else 0.0
+            val distinctionRate = if (classGrades.isNotEmpty()) (classGrades.count { it.totalScore >= 75.0 }.toDouble() / classGrades.size * 100) else 0.0
+
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = GhanaNavyPrimary),
+                    modifier = Modifier.fillMaxWidth().testTag("class_cumulative_analytics_card")
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Class Performance Dashboard",
+                                color = GhanaGoldAccent,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Surface(
+                                color = Color.White.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text(
+                                    text = "$selectedGradeClass • $selectedGradeTerm",
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Class Average", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
+                                Text(
+                                    text = if (classGrades.isNotEmpty()) "${String.format("%.1f", classAvg)}%" else "--",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 18.sp
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Pass Rate (≥50%)", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
+                                Text(
+                                    text = if (classGrades.isNotEmpty()) "${String.format("%.1f", passRate)}%" else "--",
+                                    color = GhanaGoldAccent,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 18.sp
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Distinction (≥75%)", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
+                                Text(
+                                    text = if (classGrades.isNotEmpty()) "${String.format("%.1f", distinctionRate)}%" else "--",
+                                    color = Color(0xFF81C784),
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 18.sp
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Entries", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
+                                Text(
+                                    text = "${classGrades.size}",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 18.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+            // View Mode Selector Segmented Chips
+            Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = gradebookViewMode == 0,
+                        onClick = { gradebookViewMode = 0 },
+                        leadingIcon = { Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                        label = { Text("Subject Marksheet", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        modifier = Modifier.weight(1f).testTag("view_mode_marksheet_chip")
+                    )
+                    FilterChip(
+                        selected = gradebookViewMode == 1,
+                        onClick = { gradebookViewMode = 1 },
+                        leadingIcon = { Icon(Icons.Default.Analytics, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                        label = { Text("Cumulative Matrix Report", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        modifier = Modifier.weight(1f).testTag("view_mode_matrix_chip")
+                    )
+                }
+
+                if (studentLedgers.isEmpty()) {
+                    Text("No students registered for $selectedGradeClass.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else if (gradebookViewMode == 0) {
+                    // --- MODE 0: SUBJECT MARKSHEET VIEW ---
+                    Text(
+                        text = "Subject Marks & Student Roll ($selectedGradeSubject • $selectedGradeTerm)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    val matchingSubjectGrades = allGrades.filter {
+                        it.subject.equals(selectedGradeSubject, ignoreCase = true) &&
+                        (selectedGradeTerm == "All Terms / Cumulative" || it.academicTerm == selectedGradeTerm)
+                    }
+
+                    studentLedgers.forEach { ledger ->
+                    val studentAllGrades = allGrades.filter { it.studentId == ledger.studentId }
+                    val studentCumulativeAvg = if (studentAllGrades.isNotEmpty()) studentAllGrades.map { it.totalScore }.average() else 0.0
+                    val existingGrade = matchingSubjectGrades.find { it.studentId == ledger.studentId }
+
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("teacher_grade_item_${ledger.studentId}")
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = ledger.studentName,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleSmall
+                                    )
+                                    Text(
+                                        text = "ID: #${ledger.studentId} • ${ledger.className}",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        horizontalAlignment = Alignment.End
+                                    ) {
+                                        Text("Overall Cumulative Avg", fontSize = 9.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                        Text(
+                                            text = if (studentAllGrades.isNotEmpty()) "${String.format("%.1f", studentCumulativeAvg)}%" else "No Data",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("$selectedGradeSubject ($selectedGradeTerm):", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    if (existingGrade != null) {
+                                        Text(
+                                            text = "CA: ${existingGrade.classScore} | Exam: ${existingGrade.examScore} | Total: ${existingGrade.totalScore}% (${existingGrade.gradeLetter})",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        if (existingGrade.remarks.isNotBlank()) {
+                                            Text(
+                                                text = "Remarks: \"${existingGrade.remarks}\"",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    } else {
+                                        Text(
+                                            text = "Grade Status: Pending Entry",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFFC62828),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        targetGradeStudentId = ledger.studentId
+                                        targetGradeStudentName = ledger.studentName
+                                        targetGradeSubject = selectedGradeSubject
+                                        targetGradeTerm = if (selectedGradeTerm == "All Terms / Cumulative") "Term 1" else selectedGradeTerm
+                                        inputClassScore = existingGrade?.classScore?.toString() ?: "28.0"
+                                        inputExamScore = existingGrade?.examScore?.toString() ?: "60.0"
+                                        inputTeacherRemarks = existingGrade?.remarks ?: "Good academic effort."
+                                        showGradeEntryDialog = true
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (existingGrade != null) MaterialTheme.colorScheme.secondary else GhanaNavyPrimary
+                                    ),
+                                    modifier = Modifier.testTag("grade_student_${ledger.studentId}")
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(if (existingGrade != null) "Edit Grade" else "Enter Grade", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                    }
+                } else {
+                    // --- MODE 1: CUMULATIVE CLASS REPORT MATRIX VIEW ---
+                    Text(
+                        text = "Class Ranking & Multi-Term Cumulative Report Matrix",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    val matrixDataList = studentLedgers.map { ledger ->
+                        val studentGrades = allGrades.filter { it.studentId == ledger.studentId }
+                        val t1Grades = studentGrades.filter { it.academicTerm == "Term 1" }
+                        val t2Grades = studentGrades.filter { it.academicTerm == "Term 2" }
+                        val t3Grades = studentGrades.filter { it.academicTerm == "Term 3" }
+
+                        val t1Avg = if (t1Grades.isNotEmpty()) t1Grades.map { it.totalScore }.average() else null
+                        val t2Avg = if (t2Grades.isNotEmpty()) t2Grades.map { it.totalScore }.average() else null
+                        val t3Avg = if (t3Grades.isNotEmpty()) t3Grades.map { it.totalScore }.average() else null
+                        val overallAvg = if (studentGrades.isNotEmpty()) studentGrades.map { it.totalScore }.average() else 0.0
+
+                        val classification = when {
+                            overallAvg >= 80.0 -> "A1 Distinction"
+                            overallAvg >= 75.0 -> "B2 Very Good"
+                            overallAvg >= 70.0 -> "B3 Good"
+                            overallAvg >= 65.0 -> "C4 Credit"
+                            overallAvg >= 60.0 -> "C5 Credit"
+                            overallAvg >= 55.0 -> "C6 Credit"
+                            overallAvg >= 50.0 -> "D7 Pass"
+                            overallAvg >= 45.0 -> "E8 Pass"
+                            else -> "F9 Fail"
+                        }
+
+                        StudentMatrixData(
+                            studentId = ledger.studentId,
+                            name = ledger.studentName,
+                            className = ledger.className,
+                            term1Avg = t1Avg,
+                            term2Avg = t2Avg,
+                            term3Avg = t3Avg,
+                            overallCumulativeAvg = overallAvg,
+                            totalSubjectEntries = studentGrades.size,
+                            topGradeLetter = classification
+                        )
+                    }.sortedByDescending { it.overallCumulativeAvg }
+
+                    matrixDataList.forEachIndexed { index, data ->
+                    val rank = index + 1
+
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("student_matrix_card_${data.studentId}")
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // Rank Medal Badge
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = when (rank) {
+                                            1 -> GhanaGoldAccent
+                                            2 -> Color(0xFFC0C0C0)
+                                            3 -> Color(0xFFCD7F32)
+                                            else -> MaterialTheme.colorScheme.primaryContainer
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "$rank",
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontSize = 13.sp,
+                                                color = if (rank <= 3) GhanaNavyPrimary else MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column {
+                                        Text(
+                                            text = data.name,
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.titleSmall
+                                        )
+                                        Text(
+                                            text = "ID: #${data.studentId} • ${data.className} • ${data.totalSubjectEntries} Subject Entries",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    color = when {
+                                        data.overallCumulativeAvg >= 80.0 -> GhanaGreenContainer
+                                        data.overallCumulativeAvg >= 70.0 -> MaterialTheme.colorScheme.primaryContainer
+                                        else -> MaterialTheme.colorScheme.secondaryContainer
+                                    },
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("Cumulative", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = if (data.totalSubjectEntries > 0) "${String.format("%.1f", data.overallCumulativeAvg)}%" else "N/A",
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 15.sp,
+                                            color = GhanaNavyPrimary
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Term breakdown row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.weight(1f).padding(end = 4.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Term 1 Avg", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(
+                                            text = data.term1Avg?.let { "${String.format("%.1f", it)}%" } ?: "--",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Term 2 Avg", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(
+                                            text = data.term2Avg?.let { "${String.format("%.1f", it)}%" } ?: "--",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.weight(1f).padding(start = 4.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Term 3 Avg", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(
+                                            text = data.term3Avg?.let { "${String.format("%.1f", it)}%" } ?: "--",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Classification: ${data.topGradeLetter}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+
+                                OutlinedButton(
+                                    onClick = {
+                                        targetGradeStudentId = data.studentId
+                                        targetGradeStudentName = data.name
+                                        targetGradeSubject = selectedGradeSubject
+                                        targetGradeTerm = if (selectedGradeTerm == "All Terms / Cumulative") "Term 1" else selectedGradeTerm
+                                        inputClassScore = "28.0"
+                                        inputExamScore = "60.0"
+                                        inputTeacherRemarks = "Solid cumulative term effort."
+                                        showGradeEntryDialog = true
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.testTag("matrix_entry_button_${data.studentId}")
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(12.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("Add Mark", fontSize = 10.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (activeTeacherTab == 2) {
+        // --- TAB 2: DAILY LESSON PLANS & MANAGEMENT REVIEW ---
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("teacher_lesson_plan_header_card")
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Daily Lesson Plans",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GhanaNavyPrimary
+                                )
+                                Text(
+                                    text = "Upload & track daily pedagogical plans by subject and class for Management Review",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Button(
+                                onClick = { showCreateLessonPlanDialog = true },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                modifier = Modifier.testTag("open_create_lesson_plan_dialog_button")
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("New Plan", fontSize = 12.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Text("Filter by Subject:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("All", "Mathematics", "Integrated Science", "ICT").forEach { sub ->
+                                FilterChip(
+                                    selected = selectedPlanFilterSubject == sub,
+                                    onClick = { selectedPlanFilterSubject = sub },
+                                    label = { Text(sub, fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("filter_plan_subject_$sub")
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text("Filter by Class:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("All", "JHS 2 - Gold", "Primary 6", "Primary 4").forEach { cls ->
+                                FilterChip(
+                                    selected = selectedPlanFilterClass == cls,
+                                    onClick = { selectedPlanFilterClass = cls },
+                                    label = { Text(cls, fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("filter_plan_class_$cls")
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            val filteredPlans = allLessonPlans.filter { plan ->
+                (selectedPlanFilterSubject == "All" || plan.subject.equals(selectedPlanFilterSubject, ignoreCase = true)) &&
+                (selectedPlanFilterClass == "All" || plan.className.equals(selectedPlanFilterClass, ignoreCase = true))
+            }
+
+                if (filteredPlans.isEmpty()) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.MenuBook, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(36.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("No lesson plans found for selected filters.", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                            Text("Click '+ New Plan' above to upload a daily lesson plan.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    filteredPlans.forEach { plan ->
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("teacher_lesson_plan_item_${plan.id}")
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = GhanaNavyPrimary.copy(alpha = 0.1f)
+                                    ) {
+                                        Text(
+                                            text = plan.subject,
+                                            fontWeight = FontWeight.Bold,
+                                            color = GhanaNavyPrimary,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer
+                                    ) {
+                                        Text(
+                                            text = plan.className,
+                                            fontWeight = FontWeight.Medium,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                val statusText = when (plan.status) {
+                                    "APPROVED" -> "APPROVED"
+                                    "REVISION_REQUESTED" -> "REVISION REQUESTED"
+                                    else -> "PENDING REVIEW"
+                                }
+                                val statusBg = when (plan.status) {
+                                    "APPROVED" -> Color(0xFFD1E7DD)
+                                    "REVISION_REQUESTED" -> Color(0xFFF8D7DA)
+                                    else -> Color(0xFFFFF3CD)
+                                }
+                                val statusColor = when (plan.status) {
+                                    "APPROVED" -> Color(0xFF0F5132)
+                                    "REVISION_REQUESTED" -> Color(0xFF842029)
+                                    else -> Color(0xFF664D03)
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = statusBg
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (plan.status == "APPROVED") Icons.Default.CheckCircle else if (plan.status == "REVISION_REQUESTED") Icons.Default.Error else Icons.Default.Schedule,
+                                            contentDescription = null,
+                                            tint = statusColor,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(statusText, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = statusColor)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text(
+                                text = plan.topic,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+
+                            if (plan.subTopic.isNotBlank()) {
+                                Text(
+                                    text = "Subtopic: ${plan.subTopic}",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Text("📅 Date: ${plan.lessonDate}", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                Text("⏱️ Duration: ${plan.durationMinutes} mins", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text("🎯 Objectives:", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text(plan.objectives, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+
+                            if (plan.teachingMaterials.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("📚 Materials & Lab Equipment:", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                Text(plan.teachingMaterials, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+
+                            if (plan.procedureSteps.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("📝 Procedure & Timeline:", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                Text(plan.procedureSteps, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+
+                            if (plan.managementFeedback.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (plan.status == "APPROVED") GhanaEmeraldGreen.copy(alpha = 0.12f) else Color(0xFFFFF3CD),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text("💬 Management Feedback:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = GhanaNavyPrimary)
+                                        Text(plan.managementFeedback, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+}
+}
+
+@Composable
+fun AttendanceRow(
+    record: AttendanceRecord,
+    weeklyAbsenceCount: Int,
+    onToggleDay: (String) -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(0.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("attendance_row_${record.id}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(2.2f)) {
+                Text(
+                    text = record.studentName,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (record.isSynced) Color(0xFFD1E7DD) else Color(0xFFFFF3CD)
+                    ) {
+                        Text(
+                            text = if (record.isSynced) "Synced" else "Local (Offline)",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (record.isSynced) Color(0xFF0F5132) else Color(0xFF856404),
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
+
+            StatusCell(status = record.mondayStatus, onClick = { onToggleDay("Mon") }, modifier = Modifier.weight(1f))
+            StatusCell(status = record.tuesdayStatus, onClick = { onToggleDay("Tue") }, modifier = Modifier.weight(1f))
+            StatusCell(status = record.wednesdayStatus, onClick = { onToggleDay("Wed") }, modifier = Modifier.weight(1f))
+            StatusCell(status = record.thursdayStatus, onClick = { onToggleDay("Thu") }, modifier = Modifier.weight(1f))
+            StatusCell(status = record.fridayStatus, onClick = { onToggleDay("Fri") }, modifier = Modifier.weight(1f))
+
+            // Automated Weekly Absenteeism Count Badge
+            Box(
+                modifier = Modifier.weight(1.2f),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (weeklyAbsenceCount > 1) Color(0xFFF8D7DA) else MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        text = "$weeklyAbsenceCount days",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (weeklyAbsenceCount > 1) Color(0xFF842029) else MaterialTheme.colorScheme.onSurface,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
+                }
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+    }
+}
+
+@Composable
+fun StatusCell(
+    status: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val (label, bgColor, textColor) = when (status) {
+        "PRESENT" -> Triple("P", Color(0xFFD1E7DD), Color(0xFF0F5132))
+        "ABSENT" -> Triple("A", Color(0xFFF8D7DA), Color(0xFF842029))
+        "LATE" -> Triple("L", Color(0xFFFFF3CD), Color(0xFF664D03))
+        else -> Triple("P", Color(0xFFD1E7DD), Color(0xFF0F5132))
+    }
+
+    Box(
+        modifier = modifier
+            .padding(2.dp)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = bgColor,
+            modifier = Modifier.size(28.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = textColor
+                )
+            }
+        }
+    }
+}
