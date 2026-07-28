@@ -144,6 +144,9 @@ interface SchoolDao {
     @Update
     suspend fun updateStudentLedger(ledger: StudentLedger)
 
+    @Query("SELECT * FROM fee_transactions ORDER BY id DESC")
+    fun getAllFeeTransactions(): Flow<List<FeeTransaction>>
+
     @Query("SELECT * FROM fee_transactions WHERE studentId = :studentId ORDER BY id DESC")
     fun getTransactionsForStudent(studentId: Long): Flow<List<FeeTransaction>>
 
@@ -153,9 +156,25 @@ interface SchoolDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAllFeeTransactions(transactions: List<FeeTransaction>)
 
+    // --- Student Fee Payments ---
+    @Query("SELECT * FROM student_fee_payments ORDER BY id DESC")
+    fun getAllFeePayments(): Flow<List<StudentFeePayment>>
+
+    @Query("SELECT * FROM student_fee_payments WHERE studentId = :studentId ORDER BY id DESC")
+    fun getFeePaymentsForStudent(studentId: Long): Flow<List<StudentFeePayment>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFeePayment(payment: StudentFeePayment)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllFeePayments(payments: List<StudentFeePayment>)
+
     // --- User Accounts (Authentication & Role System) ---
     @Query("SELECT * FROM user_accounts ORDER BY id ASC")
     fun getAllUserAccounts(): Flow<List<UserAccount>>
+
+    @Query("SELECT * FROM user_accounts WHERE isApproved = 0 ORDER BY id DESC")
+    fun getPendingUserAccounts(): Flow<List<UserAccount>>
 
     @Query("SELECT * FROM user_accounts WHERE isLoggedIn = 1 LIMIT 1")
     fun getActiveUserAccount(): Flow<UserAccount?>
@@ -168,6 +187,12 @@ interface SchoolDao {
 
     @Update
     suspend fun updateUserAccount(user: UserAccount)
+
+    @Query("UPDATE user_accounts SET isApproved = :isApproved WHERE id = :userId")
+    suspend fun updateUserApproval(userId: Long, isApproved: Boolean)
+
+    @Query("DELETE FROM user_accounts WHERE id = :userId")
+    suspend fun deleteUserAccountById(userId: Long)
 
     @Query("UPDATE user_accounts SET isLoggedIn = 0")
     suspend fun clearLoggedInUsers()
@@ -203,6 +228,19 @@ interface SchoolDao {
 
     @Update
     suspend fun updateStudentAddRequest(request: StudentAddRequest)
+
+    // --- Direct Messages (Guardian-Teacher Communication) ---
+    @Query("SELECT * FROM direct_messages ORDER BY id DESC")
+    fun getAllDirectMessages(): Flow<List<DirectMessage>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDirectMessage(message: DirectMessage): Long
+
+    @Query("UPDATE direct_messages SET isRead = 1 WHERE id = :id")
+    suspend fun markDirectMessageAsRead(id: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllDirectMessages(messages: List<DirectMessage>)
 
     // --- School Settings ---
     @Query("SELECT * FROM school_settings WHERE id = 1 LIMIT 1")

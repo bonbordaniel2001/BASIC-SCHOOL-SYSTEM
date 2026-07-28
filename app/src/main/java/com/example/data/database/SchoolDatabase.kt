@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import com.example.data.dao.AttendanceDao
 import com.example.data.dao.GradeDao
 import com.example.data.dao.GuardianDao
@@ -11,6 +12,8 @@ import com.example.data.dao.LessonPlanDao
 import com.example.data.dao.PortalUserDao
 import com.example.data.dao.SchoolDao
 import com.example.data.dao.SchoolEventDao
+import com.example.data.dao.StudentDao
+import com.example.data.dao.TeacherDao
 import com.example.data.dao.TimetableDao
 import com.example.data.model.*
 
@@ -28,20 +31,26 @@ import com.example.data.model.*
         SchoolSettings::class,
         DailyStudentAttendance::class,
         GuardianProfile::class,
+        TeacherProfile::class,
         StudentGrade::class,
         UserPortalAccount::class,
         SchoolEvent::class,
         ClassTimetable::class,
         StudentProfile::class,
         LessonPlan::class,
-        StudentAddRequest::class
+        StudentAddRequest::class,
+        StudentFeePayment::class,
+        DirectMessage::class
     ],
-    version = 12,
+    version = 17,
     exportSchema = false
 )
+@TypeConverters(Converters::class)
 abstract class SchoolDatabase : RoomDatabase() {
 
     abstract fun schoolDao(): SchoolDao
+    abstract fun studentDao(): StudentDao
+    abstract fun teacherDao(): TeacherDao
     abstract fun guardianDao(): GuardianDao
     abstract fun gradeDao(): GradeDao
     abstract fun portalUserDao(): PortalUserDao

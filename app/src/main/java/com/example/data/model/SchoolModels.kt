@@ -17,7 +17,13 @@ data class StaffMember(
     val isCanApproveOverrides: Boolean = false,
     val isCanAccessFinancials: Boolean = false,
     val isCanSendSms: Boolean = true,
-    val isCanManageRoles: Boolean = false
+    val isCanManageRoles: Boolean = false,
+    val monthlySalaryGhc: Double = 2500.0,
+    val paymentStatus: String = "ACTIVE", // "ACTIVE", "PAID", "WITHHELD"
+    val withheldReason: String = "",
+    val lastPaymentDate: String = "",
+    val lastPaymentAmount: Double = 0.0,
+    val salaryNotes: String = ""
 )
 
 /**
@@ -152,8 +158,30 @@ data class UserAccount(
     val email: String,
     val phone: String,
     val role: String, // "PROPRIETOR", "TEACHER", "GUARDIAN"
-    val schoolName: String = "Akoma Primary & JHS",
-    val isLoggedIn: Boolean = false
+    val schoolName: String = "St. Talafor Academy",
+    val schoolId: String = "SCH-AKM-2026",
+    val isLoggedIn: Boolean = false,
+    val isApproved: Boolean = true,
+    val assignedClass: String = "JHS 2 - Gold",
+    val assignedSubject: String = "Mathematics",
+    val linkedStudentChild: String = ""
+)
+
+/**
+ * Direct Message Entity for Guardian-Teacher Communication with Proprietor Read-Only Access
+ */
+@Entity(tableName = "direct_messages")
+data class DirectMessage(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val senderName: String,
+    val senderRole: String, // "GUARDIAN", "TEACHER"
+    val recipientName: String, // e.g. "Mr. Kofi Mensah (Class Teacher)"
+    val recipientRole: String, // "TEACHER", "GUARDIAN"
+    val childName: String, // e.g. "Ama Serwaa Mensah"
+    val subject: String,
+    val messageBody: String,
+    val timestampString: String,
+    val isRead: Boolean = false
 )
 
 /**
@@ -193,7 +221,8 @@ data class StudentAddRequest(
 @Entity(tableName = "school_settings")
 data class SchoolSettings(
     @PrimaryKey val id: Long = 1,
-    val schoolName: String = "Akoma Primary & JHS",
+    val schoolName: String = "St. Talafor Academy",
+    val schoolId: String = "SCH-AKM-2026",
     val campusLocation: String = "Sibi, Oti Region, Ghana"
 )
 
@@ -211,5 +240,13 @@ data class EnrollmentTrendPoint(
     val totalStudents: Int,
     val jhsStudents: Int,
     val primaryStudents: Int
+)
+
+data class StudentTermPerformanceStat(
+    val termLabel: String,
+    val averageScore: Double,
+    val studentCount: Int = 0,
+    val highestScore: Double = 0.0,
+    val passRatePercentage: Double = 0.0
 )
 

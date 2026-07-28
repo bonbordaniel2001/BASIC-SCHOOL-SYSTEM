@@ -7,6 +7,8 @@ import com.example.data.dao.LessonPlanDao
 import com.example.data.dao.PortalUserDao
 import com.example.data.dao.SchoolDao
 import com.example.data.dao.SchoolEventDao
+import com.example.data.dao.StudentDao
+import com.example.data.dao.TeacherDao
 import com.example.data.dao.TimetableDao
 import com.example.data.model.*
 import kotlinx.coroutines.flow.Flow
@@ -24,7 +26,9 @@ class SchoolRepository(
     private val schoolEventDao: SchoolEventDao? = null,
     private val timetableDao: TimetableDao? = null,
     private val attendanceDao: AttendanceDao? = null,
-    private val lessonPlanDao: LessonPlanDao? = null
+    private val lessonPlanDao: LessonPlanDao? = null,
+    private val teacherDao: TeacherDao? = null,
+    private val studentDao: StudentDao? = null
 ) {
 
     val allStaff: Flow<List<StaffMember>> = dao.getAllStaff()
@@ -36,6 +40,7 @@ class SchoolRepository(
     val activeUserAccount: Flow<UserAccount?> = dao.getActiveUserAccount()
     val schoolSettings: Flow<SchoolSettings?> = dao.getSchoolSettings()
     val allGuardians: Flow<List<GuardianProfile>> = guardianDao?.getAllGuardians() ?: emptyFlow()
+    val allTeachers: Flow<List<TeacherProfile>> = teacherDao?.getAllTeachers() ?: emptyFlow()
     val allGrades: Flow<List<StudentGrade>> = gradeDao?.getAllGrades() ?: emptyFlow()
     val allLessonPlans: Flow<List<LessonPlan>> = lessonPlanDao?.getAllLessonPlans() ?: emptyFlow()
     val allPortalAccounts: Flow<List<UserPortalAccount>> = portalUserDao?.getAllAccounts() ?: emptyFlow()
@@ -71,8 +76,15 @@ class SchoolRepository(
     fun getStudentLedger(studentId: Long): Flow<StudentLedger?> =
         dao.getStudentLedgerById(studentId)
 
+    val allFeeTransactions: Flow<List<FeeTransaction>> = dao.getAllFeeTransactions()
+
     fun getTransactionsForStudent(studentId: Long): Flow<List<FeeTransaction>> =
         dao.getTransactionsForStudent(studentId)
+
+    val allFeePayments: Flow<List<StudentFeePayment>> = dao.getAllFeePayments()
+
+    fun getFeePaymentsForStudent(studentId: Long): Flow<List<StudentFeePayment>> =
+        dao.getFeePaymentsForStudent(studentId)
 
     // User Accounts Authentication & Switching
     suspend fun registerOrUpdateUser(
@@ -80,37 +92,121 @@ class SchoolRepository(
         email: String,
         phone: String,
         role: String,
-        schoolName: String
+        schoolName: String,
+        schoolId: String = "SCH-AKM-2026",
+        assignedClass: String = "JHS 2 - Gold",
+        assignedSubject: String = "Mathematics",
+        linkedStudentChild: String = ""
     ): UserAccount {
+        // 1. Get current school settings or default proprietor info
+        val settings = dao.getSchoolSettings().first() ?: SchoolSettings(
+            schoolName = "St. Talafor Academy",
+            schoolId = "SCH-AKM-2026"
+        )
+
+        val expectedSchoolName = settings.schoolName.trim()
+        val expectedSchoolId = settings.schoolId.trim()
+
+        // Rule 4: Mismatch Denial Rule
+        if (schoolName.trim().isNotBlank() && !schoolName.trim().equals(expectedSchoolName, ignoreCase = true)) {
+            throw IllegalArgumentException("School Name '$schoolName' does not match school settings ('$expectedSchoolName'). Registration denied.")
+        }
+        if (schoolId.trim().isNotBlank() && !schoolId.trim().equals(expectedSchoolId, ignoreCase = true)) {
+            throw IllegalArgumentException("School ID '$schoolId' does not match school settings ('$expectedSchoolId'). Registration denied.")
+        }
+
+        // Rule 2: Guardian must provide child association
+        val upperRole = role.uppercase(Locale.getDefault())
+        if (upperRole == "GUARDIAN" && linkedStudentChild.trim().isBlank()) {
+            throw IllegalArgumentException("A guardian creating an account must specify the child they are associated with.")
+        }
+
+        val allUsers = dao.getAllUserAccounts().first()
+        val existingProprietor = allUsers.find { it.role == "PROPRIETOR" }
+
+        // Rule 1: Proprietor is first person to log in. Others require proprietor approval.
+        val isFirstUser = allUsers.isEmpty()
+        val isProprietorRole = upperRole == "PROPRIETOR"
+
+        val isAutoApproved = if (isProprietorRole) {
+            true
+        } else if (existingProprietor == null && isFirstUser) {
+            true
+        } else {
+            false // Requires Proprietor Approval!
+        }
+
         dao.clearLoggedInUsers()
         val existing = dao.getUserByEmail(email)
+
         val user = if (existing != null) {
             existing.copy(
                 fullName = fullName,
                 phone = phone,
-                role = role,
-                schoolName = schoolName,
-                isLoggedIn = true
+                role = upperRole,
+                schoolName = expectedSchoolName,
+                schoolId = expectedSchoolId,
+                isLoggedIn = isAutoApproved,
+                isApproved = if (existing.isApproved) true else isAutoApproved,
+                assignedClass = if (upperRole == "TEACHER") assignedClass else existing.assignedClass,
+                assignedSubject = if (upperRole == "TEACHER") assignedSubject else existing.assignedSubject,
+                linkedStudentChild = if (upperRole == "GUARDIAN") linkedStudentChild else existing.linkedStudentChild
             )
         } else {
             UserAccount(
                 fullName = fullName,
                 email = email,
                 phone = phone,
-                role = role,
-                schoolName = schoolName,
-                isLoggedIn = true
+                role = upperRole,
+                schoolName = expectedSchoolName,
+                schoolId = expectedSchoolId,
+                isLoggedIn = isAutoApproved,
+                isApproved = isAutoApproved,
+                assignedClass = assignedClass,
+                assignedSubject = assignedSubject,
+                linkedStudentChild = linkedStudentChild
             )
         }
+
         val id = dao.insertUserAccount(user)
         val savedUser = user.copy(id = if (existing != null) existing.id else id)
 
-        // If Proprietor, also update global school settings
-        if (role == "PROPRIETOR" && schoolName.isNotBlank()) {
-            dao.saveSchoolSettings(SchoolSettings(id = 1, schoolName = schoolName))
+        if (isProprietorRole && schoolName.isNotBlank()) {
+            dao.saveSchoolSettings(
+                SchoolSettings(
+                    id = 1,
+                    schoolName = schoolName,
+                    schoolId = if (schoolId.isNotBlank()) schoolId else "SCH-AKM-2026"
+                )
+            )
+        }
+
+        if (!isAutoApproved) {
+            addNotification(
+                recipientRole = "PROPRIETOR",
+                type = "APPROVAL_REQUIRED",
+                title = "Pending Account Registration",
+                message = "New $upperRole account requested by $fullName ($email). Approval required."
+            )
         }
 
         return savedUser
+    }
+
+    fun getPendingUserAccounts(): Flow<List<UserAccount>> = dao.getPendingUserAccounts()
+
+    suspend fun approveUserAccount(userId: Long) {
+        dao.updateUserApproval(userId, true)
+        addNotification(
+            recipientRole = "ALL",
+            type = "BROADCAST",
+            title = "Account Registration Approved",
+            message = "Your account registration has been approved by the Proprietor. You may now log in."
+        )
+    }
+
+    suspend fun rejectUserAccount(userId: Long) {
+        dao.deleteUserAccountById(userId)
     }
 
     suspend fun switchActiveUser(userAccount: UserAccount) {
@@ -174,6 +270,81 @@ class SchoolRepository(
 
     suspend fun dropStaffMember(staffId: Long) {
         dao.deleteStaffMemberById(staffId)
+    }
+
+    suspend fun payStaffSalary(staffId: Long, amountGhc: Double, paymentMethod: String, notes: String) {
+        val staffList = dao.getAllStaff().first()
+        val staff = staffList.find { it.id == staffId } ?: return
+        val currentDate = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
+
+        val updatedStaff = staff.copy(
+            paymentStatus = "PAID",
+            lastPaymentDate = currentDate,
+            lastPaymentAmount = amountGhc,
+            withheldReason = "",
+            salaryNotes = if (notes.isNotBlank()) "Paid via $paymentMethod ($notes)" else "Paid via $paymentMethod"
+        )
+        dao.updateStaff(updatedStaff)
+
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "SALARY_PAYMENT",
+            title = "Staff Payment Disbursed",
+            message = "GH₵ ${String.format("%.2f", amountGhc)} paid to ${staff.name} (${staff.primaryRole}) via $paymentMethod."
+        )
+    }
+
+    suspend fun withholdStaffPayment(staffId: Long, reason: String) {
+        val staffList = dao.getAllStaff().first()
+        val staff = staffList.find { it.id == staffId } ?: return
+        val updatedStaff = staff.copy(
+            paymentStatus = "WITHHELD",
+            withheldReason = reason
+        )
+        dao.updateStaff(updatedStaff)
+
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "SALARY_WITHHELD",
+            title = "Staff Payment Withheld",
+            message = "Payment for ${staff.name} (${staff.primaryRole}) has been withheld. Reason: $reason"
+        )
+    }
+
+    suspend fun releaseStaffPaymentHold(staffId: Long) {
+        val staffList = dao.getAllStaff().first()
+        val staff = staffList.find { it.id == staffId } ?: return
+        val updatedStaff = staff.copy(
+            paymentStatus = "ACTIVE",
+            withheldReason = ""
+        )
+        dao.updateStaff(updatedStaff)
+
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "SALARY_RELEASED",
+            title = "Payment Hold Released",
+            message = "Payment hold for ${staff.name} (${staff.primaryRole}) has been released."
+        )
+    }
+
+    suspend fun updateStaffSalary(staffId: Long, newSalaryGhc: Double, reason: String, adjustmentType: String) {
+        val staffList = dao.getAllStaff().first()
+        val staff = staffList.find { it.id == staffId } ?: return
+        val oldSalary = staff.monthlySalaryGhc
+        val updatedStaff = staff.copy(
+            monthlySalaryGhc = newSalaryGhc,
+            salaryNotes = "$adjustmentType: From GH₵ ${String.format("%.2f", oldSalary)} to GH₵ ${String.format("%.2f", newSalaryGhc)}. Reason: $reason"
+        )
+        dao.updateStaff(updatedStaff)
+
+        val titleStr = if (adjustmentType.equals("INCREASE", ignoreCase = true)) "Staff Payment Increased" else "Staff Payment Reduced"
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "SALARY_ADJUSTMENT",
+            title = titleStr,
+            message = "Payment for ${staff.name} updated from GH₵ ${String.format("%.2f", oldSalary)} to GH₵ ${String.format("%.2f", newSalaryGhc)}. Reason: $reason"
+        )
     }
 
     suspend fun addStudentDirect(
@@ -494,6 +665,7 @@ class SchoolRepository(
         val dateFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
         val dateStr = dateFormat.format(Date())
         val txnRef = "MOMO-${System.currentTimeMillis().toString().takeLast(8)}"
+        val receiptNo = "RCP-${System.currentTimeMillis().toString().takeLast(6)}"
 
         val transaction = FeeTransaction(
             studentId = studentId,
@@ -509,18 +681,98 @@ class SchoolRepository(
 
         // Update Student Ledger Balance
         val ledger = dao.getStudentLedgerById(studentId).first()
+        var remBalance = 0.0
         if (ledger != null) {
             val newPaid = ledger.paidFeesGhc + amountGhc
             val newBalance = (ledger.totalFeesGhc - newPaid).coerceAtLeast(0.0)
+            remBalance = newBalance
             dao.updateStudentLedger(
                 ledger.copy(
                     paidFeesGhc = newPaid,
                     balanceGhc = newBalance
                 )
             )
+
+            // Save rich StudentFeePayment entity record
+            val feePayment = StudentFeePayment(
+                studentId = studentId,
+                studentName = ledger.studentName,
+                className = ledger.className,
+                guardianName = ledger.guardianName,
+                amountPaidGhc = amountGhc,
+                paymentDate = dateStr,
+                paymentMethod = method,
+                feeCategory = "Tuition & School Fees",
+                academicTerm = "Term 3",
+                transactionRef = txnRef,
+                receiptNumber = receiptNo,
+                remainingBalanceGhc = remBalance,
+                recordedBy = "Guardian Mobile Money",
+                notes = "Reference: $reference"
+            )
+            dao.insertFeePayment(feePayment)
         }
 
         return transaction
+    }
+
+    suspend fun recordStudentFeePayment(
+        studentId: Long,
+        amountGhc: Double,
+        paymentMethod: String,
+        feeCategory: String,
+        academicTerm: String = "Term 3",
+        notes: String = "",
+        recordedBy: String = "Bursar / Proprietor"
+    ): StudentFeePayment? {
+        val dateFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
+        val dateStr = dateFormat.format(Date())
+        val txnRef = "PAY-${System.currentTimeMillis().toString().takeLast(8)}"
+        val receiptNo = "RCP-${System.currentTimeMillis().toString().takeLast(6)}"
+
+        val ledger = dao.getStudentLedgerById(studentId).first() ?: return null
+
+        val newPaid = ledger.paidFeesGhc + amountGhc
+        val newBalance = (ledger.totalFeesGhc - newPaid).coerceAtLeast(0.0)
+
+        dao.updateStudentLedger(
+            ledger.copy(
+                paidFeesGhc = newPaid,
+                balanceGhc = newBalance
+            )
+        )
+
+        val transaction = FeeTransaction(
+            studentId = studentId,
+            transactionRef = txnRef,
+            amountGhc = amountGhc,
+            paymentMethod = paymentMethod,
+            channelNumber = "N/A",
+            description = "$feeCategory Payment ($academicTerm)",
+            dateString = dateStr,
+            status = "SUCCESS"
+        )
+        dao.insertFeeTransaction(transaction)
+
+        val feePayment = StudentFeePayment(
+            studentId = studentId,
+            studentName = ledger.studentName,
+            className = ledger.className,
+            guardianName = ledger.guardianName,
+            amountPaidGhc = amountGhc,
+            paymentDate = dateStr,
+            paymentMethod = paymentMethod,
+            feeCategory = feeCategory,
+            academicTerm = academicTerm,
+            transactionRef = txnRef,
+            receiptNumber = receiptNo,
+            remainingBalanceGhc = newBalance,
+            recordedBy = recordedBy,
+            notes = notes
+        )
+        dao.insertFeePayment(feePayment)
+
+        return feePayment
     }
 
     suspend fun seedInitialDataIfEmpty() {
@@ -804,6 +1056,61 @@ class SchoolRepository(
             )
             dao.insertAllFeeTransactions(transactions)
 
+            val initialFeePayments = listOf(
+                StudentFeePayment(
+                    id = 1,
+                    studentId = 102,
+                    studentName = "Ama Serwaa Mensah",
+                    className = "JHS 2 - Gold",
+                    guardianName = "Mrs. Grace Mensah",
+                    amountPaidGhc = 800.0,
+                    paymentDate = "10 Jul 2026, 11:20",
+                    paymentMethod = "MTN MoMo",
+                    feeCategory = "Tuition",
+                    academicTerm = "Term 3",
+                    transactionRef = "MOMO-88124910",
+                    receiptNumber = "RCP-981241",
+                    remainingBalanceGhc = 1100.0,
+                    recordedBy = "Guardian Mobile Money",
+                    notes = "Part payment for Term 3 Tuition"
+                ),
+                StudentFeePayment(
+                    id = 2,
+                    studentId = 102,
+                    studentName = "Ama Serwaa Mensah",
+                    className = "JHS 2 - Gold",
+                    guardianName = "Mrs. Grace Mensah",
+                    amountPaidGhc = 400.0,
+                    paymentDate = "15 Jun 2026, 09:45",
+                    paymentMethod = "MTN MoMo",
+                    feeCategory = "PTA Levy & Feeding",
+                    academicTerm = "Term 3",
+                    transactionRef = "MOMO-44210982",
+                    receiptNumber = "RCP-882190",
+                    remainingBalanceGhc = 700.0,
+                    recordedBy = "Guardian Mobile Money",
+                    notes = "PTA Infrastructure & Feeding Support"
+                ),
+                StudentFeePayment(
+                    id = 3,
+                    studentId = 201,
+                    studentName = "Kojo Mensah Jr.",
+                    className = "Primary 4 - Harmony",
+                    guardianName = "Mrs. Grace Mensah",
+                    amountPaidGhc = 1400.0,
+                    paymentDate = "02 Jun 2026, 08:30",
+                    paymentMethod = "Telecel Cash",
+                    feeCategory = "Full Term Package",
+                    academicTerm = "Term 3",
+                    transactionRef = "MOMO-10928374",
+                    receiptNumber = "RCP-771029",
+                    remainingBalanceGhc = 0.0,
+                    recordedBy = "Bursar Cashier",
+                    notes = "Full term fees settled in full"
+                )
+            )
+            dao.insertAllFeePayments(initialFeePayments)
+
             // Initial School Settings
             dao.saveSchoolSettings(SchoolSettings(id = 1, schoolName = "St. Talafor Academy", campusLocation = "Sibi, Oti Region, Ghana"))
 
@@ -1037,6 +1344,44 @@ class SchoolRepository(
             )
             guardianDao?.insertAllGuardians(initialGuardians)
 
+            // Seed Initial Teacher Profiles
+            val initialTeachers = listOf(
+                TeacherProfile(
+                    fullName = "Mr. Kojo Mensah",
+                    teacherCode = "TCH/2025/001",
+                    assignedClass = "JHS 2 - Gold",
+                    subjectSpecialization = "Mathematics & Integrated Science",
+                    phoneNumber = "0208112233",
+                    email = "kojo.mensah@sttalafor.edu.gh",
+                    qualification = "B.Ed Mathematics",
+                    employmentStatus = "FULL_TIME",
+                    joiningDate = "2021-09-01"
+                ),
+                TeacherProfile(
+                    fullName = "Ms. Abena Osei",
+                    teacherCode = "TCH/2025/002",
+                    assignedClass = "Primary 4",
+                    subjectSpecialization = "English Language & Social Studies",
+                    phoneNumber = "0244001122",
+                    email = "abena.osei@sttalafor.edu.gh",
+                    qualification = "B.Ed Basic Education",
+                    employmentStatus = "FULL_TIME",
+                    joiningDate = "2022-01-15"
+                ),
+                TeacherProfile(
+                    fullName = "Mr. Emmanuel Appiah",
+                    teacherCode = "TCH/2025/003",
+                    assignedClass = "JHS 3 - Blue",
+                    subjectSpecialization = "ICT & RME",
+                    phoneNumber = "0277334455",
+                    email = "emmanuel.appiah@sttalafor.edu.gh",
+                    qualification = "B.Sc Computer Science with Education",
+                    employmentStatus = "FULL_TIME",
+                    joiningDate = "2020-09-01"
+                )
+            )
+            teacherDao?.insertAllTeachers(initialTeachers)
+
             // Seed Initial Student Academic Grades across Primary & JHS
             val initialGrades = listOf(
                 // Ama Serwaa Mensah (Student ID: 101) - JHS 2 - Gold
@@ -1203,66 +1548,48 @@ class SchoolRepository(
 
             // Seed Initial Weekly Class Timetable Slots
             val initialTimetableSlots = listOf(
-                ClassTimetable(
-                    className = "JHS 2 - Gold",
-                    dayOfWeek = "Monday",
-                    periodNumber = 1,
-                    startTime = "08:00 AM",
-                    endTime = "08:45 AM",
-                    subject = "Mathematics",
-                    teacherName = "Mr. Emmanuel Mensah",
-                    classroom = "Block J2-A"
-                ),
-                ClassTimetable(
-                    className = "JHS 2 - Gold",
-                    dayOfWeek = "Monday",
-                    periodNumber = 2,
-                    startTime = "08:45 AM",
-                    endTime = "09:30 AM",
-                    subject = "Integrated Science",
-                    teacherName = "Mrs. Grace Appiah",
-                    classroom = "Lab 1"
-                ),
-                ClassTimetable(
-                    className = "JHS 2 - Gold",
-                    dayOfWeek = "Tuesday",
-                    periodNumber = 1,
-                    startTime = "08:00 AM",
-                    endTime = "08:45 AM",
-                    subject = "English Language",
-                    teacherName = "Mr. Francis Kwarteng",
-                    classroom = "Block J2-A"
-                ),
-                ClassTimetable(
-                    className = "JHS 2 - Gold",
-                    dayOfWeek = "Tuesday",
-                    periodNumber = 2,
-                    startTime = "08:45 AM",
-                    endTime = "09:30 AM",
-                    subject = "ICT",
-                    teacherName = "Ms. Janet Osei",
-                    classroom = "Computer Lab"
-                ),
-                ClassTimetable(
-                    className = "Primary 4",
-                    dayOfWeek = "Monday",
-                    periodNumber = 1,
-                    startTime = "08:00 AM",
-                    endTime = "08:45 AM",
-                    subject = "English Language",
-                    teacherName = "Mr. Francis Kwarteng",
-                    classroom = "Room P4"
-                ),
-                ClassTimetable(
-                    className = "Primary 4",
-                    dayOfWeek = "Monday",
-                    periodNumber = 2,
-                    startTime = "08:45 AM",
-                    endTime = "09:30 AM",
-                    subject = "Mathematics",
-                    teacherName = "Mr. Emmanuel Mensah",
-                    classroom = "Room P4"
-                )
+                // JHS 2 - Gold Monday
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Monday", periodNumber = 1, startTime = "08:00 AM", endTime = "08:45 AM", subject = "Mathematics", teacherName = "Mr. Emmanuel Mensah", classroom = "Block J2-A"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Monday", periodNumber = 2, startTime = "08:45 AM", endTime = "09:30 AM", subject = "Integrated Science", teacherName = "Mrs. Grace Appiah", classroom = "Lab 1"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Monday", periodNumber = 3, startTime = "09:45 AM", endTime = "10:30 AM", subject = "English Language", teacherName = "Mr. Francis Kwarteng", classroom = "Block J2-A"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Monday", periodNumber = 4, startTime = "10:30 AM", endTime = "11:15 AM", subject = "Social Studies", teacherName = "Mr. Kwaku Addo", classroom = "Block J2-A"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Monday", periodNumber = 5, startTime = "11:30 AM", endTime = "12:15 PM", subject = "ICT / Computing", teacherName = "Ms. Janet Osei", classroom = "Computer Lab"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Monday", periodNumber = 6, startTime = "12:15 PM", endTime = "01:00 PM", subject = "R.M.E.", teacherName = "Mr. Francis Kwarteng", classroom = "Block J2-A"),
+
+                // JHS 2 - Gold Tuesday
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Tuesday", periodNumber = 1, startTime = "08:00 AM", endTime = "08:45 AM", subject = "English Language", teacherName = "Mr. Francis Kwarteng", classroom = "Block J2-A"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Tuesday", periodNumber = 2, startTime = "08:45 AM", endTime = "09:30 AM", subject = "ICT / Computing", teacherName = "Ms. Janet Osei", classroom = "Computer Lab"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Tuesday", periodNumber = 3, startTime = "09:45 AM", endTime = "10:30 AM", subject = "Mathematics", teacherName = "Mr. Emmanuel Mensah", classroom = "Block J2-A"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Tuesday", periodNumber = 4, startTime = "10:30 AM", endTime = "11:15 AM", subject = "Integrated Science", teacherName = "Mrs. Grace Appiah", classroom = "Lab 1"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Tuesday", periodNumber = 5, startTime = "11:30 AM", endTime = "12:15 PM", subject = "Ghanaian Language (Twi)", teacherName = "Mrs. Abena Pokua", classroom = "Block J2-A"),
+
+                // JHS 2 - Gold Wednesday
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Wednesday", periodNumber = 1, startTime = "08:00 AM", endTime = "08:45 AM", subject = "Integrated Science", teacherName = "Mrs. Grace Appiah", classroom = "Lab 1"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Wednesday", periodNumber = 2, startTime = "08:45 AM", endTime = "09:30 AM", subject = "Mathematics", teacherName = "Mr. Emmanuel Mensah", classroom = "Block J2-A"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Wednesday", periodNumber = 3, startTime = "09:45 AM", endTime = "10:30 AM", subject = "Creative Arts & Design", teacherName = "Mr. Kofi Boakye", classroom = "Art Studio"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Wednesday", periodNumber = 4, startTime = "10:30 AM", endTime = "11:15 AM", subject = "French Language", teacherName = "Mme. Sophie Laurent", classroom = "Block J2-A"),
+
+                // JHS 2 - Gold Thursday
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Thursday", periodNumber = 1, startTime = "08:00 AM", endTime = "08:45 AM", subject = "Mathematics", teacherName = "Mr. Emmanuel Mensah", classroom = "Block J2-A"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Thursday", periodNumber = 2, startTime = "08:45 AM", endTime = "09:30 AM", subject = "English Language", teacherName = "Mr. Francis Kwarteng", classroom = "Block J2-A"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Thursday", periodNumber = 3, startTime = "09:45 AM", endTime = "10:30 AM", subject = "Social Studies", teacherName = "Mr. Kwaku Addo", classroom = "Block J2-A"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Thursday", periodNumber = 4, startTime = "10:30 AM", endTime = "11:15 AM", subject = "Physical Education", teacherName = "Coach Isaac Mensah", classroom = "Sports Field"),
+
+                // JHS 2 - Gold Friday
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Friday", periodNumber = 1, startTime = "08:00 AM", endTime = "08:45 AM", subject = "ICT / Computing", teacherName = "Ms. Janet Osei", classroom = "Computer Lab"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Friday", periodNumber = 2, startTime = "08:45 AM", endTime = "09:30 AM", subject = "Career Technology", teacherName = "Mr. Yaw Baah", classroom = "Technical Workshop"),
+                ClassTimetable(className = "JHS 2 - Gold", dayOfWeek = "Friday", periodNumber = 3, startTime = "09:45 AM", endTime = "10:30 AM", subject = "Mathematics Review", teacherName = "Mr. Emmanuel Mensah", classroom = "Block J2-A"),
+
+                // Primary 4 - Harmony Monday to Friday
+                ClassTimetable(className = "Primary 4 - Harmony", dayOfWeek = "Monday", periodNumber = 1, startTime = "08:00 AM", endTime = "08:45 AM", subject = "English Language", teacherName = "Mr. Francis Kwarteng", classroom = "Room P4"),
+                ClassTimetable(className = "Primary 4 - Harmony", dayOfWeek = "Monday", periodNumber = 2, startTime = "08:45 AM", endTime = "09:30 AM", subject = "Mathematics", teacherName = "Mr. Emmanuel Mensah", classroom = "Room P4"),
+                ClassTimetable(className = "Primary 4 - Harmony", dayOfWeek = "Monday", periodNumber = 3, startTime = "09:45 AM", endTime = "10:30 AM", subject = "Natural Science", teacherName = "Mrs. Grace Appiah", classroom = "Room P4"),
+                ClassTimetable(className = "Primary 4 - Harmony", dayOfWeek = "Tuesday", periodNumber = 1, startTime = "08:00 AM", endTime = "08:45 AM", subject = "Mathematics", teacherName = "Mr. Emmanuel Mensah", classroom = "Room P4"),
+                ClassTimetable(className = "Primary 4 - Harmony", dayOfWeek = "Tuesday", periodNumber = 2, startTime = "08:45 AM", endTime = "09:30 AM", subject = "Creative Arts", teacherName = "Mr. Kofi Boakye", classroom = "Room P4"),
+                ClassTimetable(className = "Primary 4 - Harmony", dayOfWeek = "Wednesday", periodNumber = 1, startTime = "08:00 AM", endTime = "08:45 AM", subject = "Ghanaian Language (Twi)", teacherName = "Mrs. Abena Pokua", classroom = "Room P4"),
+                ClassTimetable(className = "Primary 4 - Harmony", dayOfWeek = "Wednesday", periodNumber = 2, startTime = "08:45 AM", endTime = "09:30 AM", subject = "Our World Our People", teacherName = "Mr. Kwaku Addo", classroom = "Room P4"),
+                ClassTimetable(className = "Primary 4 - Harmony", dayOfWeek = "Thursday", periodNumber = 1, startTime = "08:00 AM", endTime = "08:45 AM", subject = "Computing", teacherName = "Ms. Janet Osei", classroom = "Computer Lab"),
+                ClassTimetable(className = "Primary 4 - Harmony", dayOfWeek = "Friday", periodNumber = 1, startTime = "08:00 AM", endTime = "08:45 AM", subject = "R.M.E.", teacherName = "Mr. Francis Kwarteng", classroom = "Room P4")
             )
             timetableDao?.insertAllTimetables(initialTimetableSlots)
 

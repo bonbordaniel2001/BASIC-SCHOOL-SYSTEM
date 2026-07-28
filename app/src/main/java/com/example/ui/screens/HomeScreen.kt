@@ -60,6 +60,10 @@ fun HomeScreen(
     var confirmPasswordInput by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf("PROPRIETOR") }
     var schoolNameInput by remember { mutableStateOf(schoolName) }
+    var schoolIdInput by remember { mutableStateOf("SCH-AKM-2026") }
+    var assignedClassInput by remember { mutableStateOf("JHS 2 - Gold") }
+    var assignedSubjectInput by remember { mutableStateOf("Mathematics") }
+    var linkedStudentChildInput by remember { mutableStateOf("Ama Serwaa Mensah") }
 
     var isPasswordVisible by remember { mutableStateOf(false) }
     var authErrorMessage by remember { mutableStateOf<String?>(null) }
@@ -137,6 +141,63 @@ fun HomeScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("dialog_create_school_name")
                     )
+
+                    OutlinedTextField(
+                        value = schoolIdInput,
+                        onValueChange = { schoolIdInput = it },
+                        label = { Text("School ID / Registration Code") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("dialog_create_school_id")
+                    )
+
+                    if (selectedRole == "TEACHER") {
+                        OutlinedTextField(
+                            value = assignedClassInput,
+                            onValueChange = { assignedClassInput = it },
+                            label = { Text("Assigned Class (e.g. JHS 2 - Gold)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("dialog_create_assigned_class")
+                        )
+                        OutlinedTextField(
+                            value = assignedSubjectInput,
+                            onValueChange = { assignedSubjectInput = it },
+                            label = { Text("Assigned Subject (e.g. Mathematics)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("dialog_create_assigned_subject")
+                        )
+                    }
+
+                    if (selectedRole == "GUARDIAN") {
+                        OutlinedTextField(
+                            value = linkedStudentChildInput,
+                            onValueChange = { linkedStudentChildInput = it },
+                            label = { Text("Associated Child / Ward Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("dialog_create_linked_child")
+                        )
+                    }
+
+                    if (selectedRole != "PROPRIETOR") {
+                        Surface(
+                            color = GhanaGoldAccent.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = GhanaNavyPrimary, modifier = Modifier.size(16.dp))
+                                Text(
+                                    text = "Requires Proprietor approval before account is activated.",
+                                    fontSize = 11.sp,
+                                    color = GhanaNavyPrimary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -151,10 +212,13 @@ fun HomeScreen(
                             email = emailInput,
                             phone = phoneInput,
                             role = selectedRole,
-                            schoolNameInput = schoolNameInput
+                            schoolNameInput = schoolNameInput,
+                            schoolIdInput = schoolIdInput,
+                            assignedClass = assignedClassInput,
+                            assignedSubject = assignedSubjectInput,
+                            linkedStudentChild = linkedStudentChildInput
                         )
                         showCreateAccountDialog = false
-                        Toast.makeText(context, "Account Created Successfully!", Toast.LENGTH_SHORT).show()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
                     modifier = Modifier.testTag("dialog_create_account_submit")
@@ -728,6 +792,49 @@ fun HomeScreen(
                             }
                         }
 
+                        OutlinedTextField(
+                            value = schoolIdInput,
+                            onValueChange = { schoolIdInput = it },
+                            label = { Text("School ID / Registration Code") },
+                            leadingIcon = { Icon(Icons.Default.School, contentDescription = null) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("home_create_school_id_input")
+                        )
+
+                        if (selectedRole == "TEACHER") {
+                            OutlinedTextField(
+                                value = assignedClassInput,
+                                onValueChange = { assignedClassInput = it },
+                                label = { Text("Assigned Class (e.g. JHS 2 - Gold)") },
+                                leadingIcon = { Icon(Icons.Default.Class, contentDescription = null) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().testTag("home_create_assigned_class_input")
+                            )
+                            OutlinedTextField(
+                                value = assignedSubjectInput,
+                                onValueChange = { assignedSubjectInput = it },
+                                label = { Text("Assigned Subject (e.g. Mathematics)") },
+                                leadingIcon = { Icon(Icons.Default.Book, contentDescription = null) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().testTag("home_create_assigned_subject_input")
+                            )
+                        }
+
+                        if (selectedRole == "GUARDIAN") {
+                            OutlinedTextField(
+                                value = linkedStudentChildInput,
+                                onValueChange = { linkedStudentChildInput = it },
+                                label = { Text("Associated Child / Ward Name") },
+                                leadingIcon = { Icon(Icons.Default.ChildCare, contentDescription = null) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().testTag("home_create_linked_child_input")
+                            )
+                        }
+
                         Button(
                             onClick = {
                                 if (fullNameInput.isBlank()) {
@@ -743,9 +850,12 @@ fun HomeScreen(
                                     email = emailInput,
                                     phone = phoneInput,
                                     role = selectedRole,
-                                    schoolNameInput = schoolName
+                                    schoolNameInput = schoolName,
+                                    schoolIdInput = schoolIdInput,
+                                    assignedClass = assignedClassInput,
+                                    assignedSubject = assignedSubjectInput,
+                                    linkedStudentChild = linkedStudentChildInput
                                 )
-                                Toast.makeText(context, "Account Created! Welcome $fullNameInput", Toast.LENGTH_SHORT).show()
                             },
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),

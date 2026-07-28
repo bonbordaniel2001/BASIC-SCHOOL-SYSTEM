@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -164,6 +165,86 @@ fun SchoolCalendarScreen(
                                 daysLeft = "41 Days Left",
                                 modifier = Modifier.weight(1f)
                             )
+                        }
+                    }
+                }
+            }
+
+            // --- CALENDAR PORTAL GROUPED TASK HUB & DASHBOARD NAVIGATION ---
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("calendar_grouped_task_hub_card")
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.Apps, contentDescription = null, tint = GhanaNavyPrimary)
+                                Column {
+                                    Text(
+                                        text = "Calendar Portal Tasks",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = GhanaNavyPrimary
+                                    )
+                                    Text(
+                                        text = "Event scheduling shortcuts & portal navigation",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // Button taking user to the App Dashboard
+                            Button(
+                                onClick = { viewModel.setViewMode(com.example.ui.viewmodel.ViewMode.HOME) },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                modifier = Modifier.testTag("calendar_task_go_to_dashboard")
+                            ) {
+                                Icon(Icons.Default.Dashboard, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("App Dashboard", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { showAddEventDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                modifier = Modifier.weight(1f).testTag("calendar_task_add_event")
+                            ) {
+                                Icon(Icons.Default.Event, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Event", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = { selectedCategory = "PARENTS" },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("calendar_task_academic_filter")
+                            ) {
+                                Icon(Icons.Default.FilterList, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Academic Events", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -405,7 +486,7 @@ fun SchoolCalendarScreen(
                     }
                 }
             } else {
-                items(filteredEvents, key = { it.id }) { event ->
+                itemsIndexed(filteredEvents, key = { index, event -> "event_${event.id}_$index" }) { _, event ->
                     EventCardItem(
                         event = event,
                         onDelete = { viewModel.deleteSchoolEvent(event) }

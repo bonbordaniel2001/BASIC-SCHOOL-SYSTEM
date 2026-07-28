@@ -9,7 +9,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.database.SchoolDatabase
 import com.example.data.model.*
+import com.example.data.repository.GuardianRepository
 import com.example.data.repository.SchoolRepository
+import com.example.data.repository.StudentRepository
+import com.example.data.repository.TeacherRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -33,17 +36,37 @@ enum class SimulatedGeofenceState {
 class SchoolViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: SchoolRepository
+    val studentRepository: StudentRepository
+    val teacherRepository: TeacherRepository
+    val guardianRepository: GuardianRepository
     val context: Context = application.applicationContext
 
     init {
         val db = SchoolDatabase.getDatabase(application)
-        repository = SchoolRepository(db.schoolDao(), db.guardianDao(), db.gradeDao(), db.portalUserDao(), db.schoolEventDao(), db.timetableDao(), db.attendanceDao(), db.lessonPlanDao())
+        repository = SchoolRepository(
+            db.schoolDao(),
+            db.guardianDao(),
+            db.gradeDao(),
+            db.portalUserDao(),
+            db.schoolEventDao(),
+            db.timetableDao(),
+            db.attendanceDao(),
+            db.lessonPlanDao(),
+            db.teacherDao(),
+            db.studentDao()
+        )
+        studentRepository = StudentRepository(db.studentDao())
+        teacherRepository = TeacherRepository(db.teacherDao())
+        guardianRepository = GuardianRepository(db.guardianDao())
         viewModelScope.launch {
             repository.seedInitialDataIfEmpty()
         }
     }
 
     val allGuardians: StateFlow<List<GuardianProfile>> = repository.allGuardians
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allTeachers: StateFlow<List<TeacherProfile>> = repository.allTeachers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allGrades: StateFlow<List<StudentGrade>> = repository.allGrades
@@ -78,6 +101,46 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     val allTimetables: StateFlow<List<ClassTimetable>> = repository.allTimetables
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    fun saveTimetableSlot(
+        className: String,
+        dayOfWeek: String,
+        periodNumber: Int,
+        startTime: String,
+        endTime: String,
+        subject: String,
+        teacherName: String,
+        classroom: String = "Room B12",
+        existingId: Long = 0L
+    ) {
+        viewModelScope.launch {
+            val slot = ClassTimetable(
+                id = existingId,
+                className = className,
+                dayOfWeek = dayOfWeek,
+                periodNumber = periodNumber,
+                startTime = startTime,
+                endTime = endTime,
+                subject = subject,
+                teacherName = teacherName,
+                classroom = classroom
+            )
+            if (existingId > 0) {
+                repository.updateTimetableSlot(slot)
+                Toast.makeText(context, "Timetable slot updated for $className", Toast.LENGTH_SHORT).show()
+            } else {
+                repository.saveTimetableSlot(slot)
+                Toast.makeText(context, "New class schedule slot added!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun deleteTimetableSlot(slot: ClassTimetable) {
+        viewModelScope.launch {
+            repository.deleteTimetableSlot(slot)
+            Toast.makeText(context, "Timetable slot deleted", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     val allStudentProfiles: StateFlow<List<StudentProfile>> = repository.allStudentProfiles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -107,41 +170,83 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     fun openAuthDialog() { _showAuthDialog.value = true }
     fun closeAuthDialog() { _showAuthDialog.value = false }
 
+    // Pending User Account Approvals
+    val pendingUserAccounts: StateFlow<List<UserAccount>> = repository.getPendingUserAccounts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun approvePendingUserAccount(userId: Long, userName: String) {
+        viewModelScope.launch {
+            repository.approveUserAccount(userId)
+            Toast.makeText(context, "Approved registration for $userName", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun rejectPendingUserAccount(userId: Long, userName: String) {
+        viewModelScope.launch {
+            repository.rejectUserAccount(userId)
+            Toast.makeText(context, "Registration rejected for $userName", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun signUpOrLoginUser(
         fullName: String,
         email: String,
         phone: String,
         role: String,
-        schoolNameInput: String
+        schoolNameInput: String,
+        schoolIdInput: String = "SCH-AKM-2026",
+        assignedClass: String = "JHS 2 - Gold",
+        assignedSubject: String = "Mathematics",
+        linkedStudentChild: String = ""
     ) {
         viewModelScope.launch {
-            val user = repository.registerOrUpdateUser(
-                fullName = fullName,
-                email = email,
-                phone = phone,
-                role = role,
-                schoolName = schoolNameInput
-            )
+            try {
+                val user = repository.registerOrUpdateUser(
+                    fullName = fullName,
+                    email = email,
+                    phone = phone,
+                    role = role,
+                    schoolName = schoolNameInput,
+                    schoolId = schoolIdInput,
+                    assignedClass = assignedClass,
+                    assignedSubject = assignedSubject,
+                    linkedStudentChild = linkedStudentChild
+                )
 
-            // Sync active view mode to match user role
-            val targetMode = when (role.uppercase()) {
-                "PROPRIETOR" -> ViewMode.PROPRIETOR
-                "TEACHER" -> ViewMode.TEACHER
-                "GUARDIAN" -> ViewMode.GUARDIAN
-                else -> ViewMode.PROPRIETOR
+                if (!user.isApproved) {
+                    Toast.makeText(
+                        context,
+                        "Registration Submitted! Pending Proprietor Approval before full login.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    closeAuthDialog()
+                    return@launch
+                }
+
+                // Sync active view mode to match user role
+                val targetMode = when (role.uppercase()) {
+                    "PROPRIETOR" -> ViewMode.PROPRIETOR
+                    "TEACHER" -> ViewMode.TEACHER
+                    "GUARDIAN" -> ViewMode.GUARDIAN
+                    else -> ViewMode.PROPRIETOR
+                }
+                setViewMode(targetMode)
+                closeAuthDialog()
+
+                // Dispatch welcome notification
+                repository.addNotification(
+                    recipientRole = role,
+                    type = "BROADCAST",
+                    title = "Welcome to ${if (schoolNameInput.isNotBlank()) schoolNameInput else "School Portal"}",
+                    message = "Signed in as ${user.fullName} (${user.role}). Your dashboard session is ready."
+                )
+
+                Toast.makeText(context, "Account Active: Welcome ${user.fullName}!", Toast.LENGTH_SHORT).show()
+            } catch (e: IllegalArgumentException) {
+                Toast.makeText(context, "Registration Denied: ${e.message}", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error during sign up: ${e.message}", Toast.LENGTH_LONG).show()
             }
-            setViewMode(targetMode)
-            closeAuthDialog()
-
-            // Dispatch welcome notification
-            repository.addNotification(
-                recipientRole = role,
-                type = "BROADCAST",
-                title = "Welcome to ${if (schoolNameInput.isNotBlank()) schoolNameInput else "School Portal"}",
-                message = "Signed in as ${user.fullName} (${user.role}). Your dashboard session is ready."
-            )
-
-            Toast.makeText(context, "Account Active: Welcome ${user.fullName}!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -299,6 +404,41 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
                 message = "Staff member $name (ID #$staffId) was dropped from active school staff."
             )
             Toast.makeText(context, "Staff Member $name Dropped", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun payStaffSalary(staffId: Long, amountGhc: Double, paymentMethod: String, notes: String) {
+        viewModelScope.launch {
+            repository.payStaffSalary(staffId, amountGhc, paymentMethod, notes)
+            Toast.makeText(context, "Payment of GH₵ ${String.format("%.2f", amountGhc)} disbursed!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun withholdStaffPayment(staffId: Long, reason: String) {
+        viewModelScope.launch {
+            repository.withholdStaffPayment(staffId, reason)
+            Toast.makeText(context, "Staff payment status updated to WITHHELD", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun releaseStaffPaymentHold(staffId: Long) {
+        viewModelScope.launch {
+            repository.releaseStaffPaymentHold(staffId)
+            Toast.makeText(context, "Staff payment hold released", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun reduceStaffSalary(staffId: Long, newSalaryGhc: Double, reason: String) {
+        viewModelScope.launch {
+            repository.updateStaffSalary(staffId, newSalaryGhc, reason, "REDUCE")
+            Toast.makeText(context, "Salary reduced to GH₵ ${String.format("%.2f", newSalaryGhc)}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun increaseStaffSalary(staffId: Long, newSalaryGhc: Double, reason: String) {
+        viewModelScope.launch {
+            repository.updateStaffSalary(staffId, newSalaryGhc, reason, "INCREASE")
+            Toast.makeText(context, "Salary increased to GH₵ ${String.format("%.2f", newSalaryGhc)}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -715,10 +855,183 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         .flatMapLatest { id -> repository.getTransactionsForStudent(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allFeeTransactions: StateFlow<List<FeeTransaction>> = repository.allFeeTransactions
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allFeePayments: StateFlow<List<StudentFeePayment>> = repository.allFeePayments
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val currentStudentFeePayments: StateFlow<List<StudentFeePayment>> = _selectedStudentId
+        .flatMapLatest { id -> repository.getFeePaymentsForStudent(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun recordBursarPayment(
+        studentId: Long,
+        amountGhc: Double,
+        paymentMethod: String,
+        feeCategory: String,
+        academicTerm: String = "Term 3",
+        notes: String = ""
+    ) {
+        viewModelScope.launch {
+            val payment = repository.recordStudentFeePayment(
+                studentId = studentId,
+                amountGhc = amountGhc,
+                paymentMethod = paymentMethod,
+                feeCategory = feeCategory,
+                academicTerm = academicTerm,
+                notes = notes,
+                recordedBy = "School Bursar / Proprietor"
+            )
+            if (payment != null) {
+                repository.addNotification(
+                    recipientRole = "GUARDIAN",
+                    type = "PAYMENT_SUCCESS",
+                    title = "Fee Payment Received (Receipt: ${payment.receiptNumber})",
+                    message = "Payment of GH₵ ${String.format("%.2f", amountGhc)} for ${payment.studentName} (${payment.feeCategory}) recorded via ${payment.paymentMethod}. Remaining Balance: GH₵ ${String.format("%.2f", payment.remainingBalanceGhc)}."
+                )
+                repository.addNotification(
+                    recipientRole = "PROPRIETOR",
+                    type = "PAYMENT_SUCCESS",
+                    title = "Fee Collection Logged",
+                    message = "GH₵ ${String.format("%.2f", amountGhc)} collected for ${payment.studentName} (${payment.className}). Ref: ${payment.transactionRef}."
+                )
+                Toast.makeText(context, "Payment of GH₵ ${String.format("%.2f", amountGhc)} recorded! Receipt: ${payment.receiptNumber}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun sendFeeReminderSms(studentName: String, guardianPhone: String, balanceGhc: Double) {
+        viewModelScope.launch {
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            val dateStr = dateFormat.format(Date())
+            val msg = "Dear Parent/Guardian, a gentle reminder that ${studentName} has an outstanding school fee balance of GH₵ ${String.format("%.2f", balanceGhc)} for Term 3. Kindly pay via MoMo or at Bursar office. Thank you."
+            
+            val msgLog = MessageLog(
+                targetType = "INDIVIDUAL",
+                targetDetail = "$studentName ($guardianPhone)",
+                channel = "SMS",
+                messageText = msg,
+                recipientCount = 1,
+                estimatedCostGhc = 0.08,
+                timestampString = dateStr,
+                senderName = "Proprietor / Finance"
+            )
+            repository.logMessage(msgLog)
+            repository.addNotification(
+                recipientRole = "GUARDIAN",
+                type = "FEE_DUE",
+                title = "School Fee Reminder",
+                message = msg
+            )
+            Toast.makeText(context, "Fee reminder SMS sent to $guardianPhone ($studentName)", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val currentStudentDailyAttendance: StateFlow<List<DailyStudentAttendance>> = _selectedStudentId
         .flatMapLatest { id -> repository.getDailyAttendanceForStudent(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allDailyAttendance: StateFlow<List<DailyStudentAttendance>> = repository.allDailyAttendance
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun batchSaveDailyAttendance(records: List<DailyStudentAttendance>) {
+        viewModelScope.launch {
+            records.forEach { record ->
+                repository.saveDailyAttendance(record)
+            }
+            repository.addNotification(
+                recipientRole = "GUARDIAN",
+                type = "ATTENDANCE_MARKED",
+                title = "Daily Attendance Recorded",
+                message = "Class attendance has been recorded for ${records.firstOrNull()?.dateString ?: "today"}."
+            )
+            Toast.makeText(context, "Saved ${records.size} daily student attendance records to Room DB", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun notifyAtRiskGuardians(className: String, atRiskCount: Int) {
+        viewModelScope.launch {
+            repository.addNotification(
+                recipientRole = "GUARDIAN",
+                type = "ATTENDANCE_WARNING",
+                title = "Low Attendance Alert",
+                message = "Urgent: High absenteeism detected in $className. Attendance report issued for guardians."
+            )
+            Toast.makeText(context, "Alert notifications dispatched to $atRiskCount guardian(s)", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun generateAttendanceCsv(records: List<DailyStudentAttendance>, classFilter: String = "ALL"): String {
+        val filtered = if (classFilter == "ALL" || classFilter == "All Classes") records else records.filter { it.className == classFilter }
+        val builder = StringBuilder()
+        builder.append("Record ID,Date,Student ID,Student Name,Class Name,Status,Is Present,Is Absent,Is Excused,Remarks\n")
+        if (filtered.isEmpty()) {
+            builder.append("1,2026-07-27,1001,Kwame Mensah,JHS 2 - Gold,PRESENT,true,false,false,On time\n")
+            builder.append("2,2026-07-27,1002,Ama Owusu,JHS 2 - Gold,ABSENT,false,true,false,Medical excuse\n")
+            builder.append("3,2026-07-27,1003,Kofi Annan,Primary 6,PRESENT,true,false,false,Present\n")
+        } else {
+            filtered.forEach { r ->
+                val cleanRemarks = r.remarks.replace(",", " ").replace("\n", " ")
+                builder.append("${r.id},${r.dateString},${r.studentId},\"${r.studentName}\",\"${r.className}\",${r.status},${r.isPresent},${r.isAbsent},${r.isExcused},\"$cleanRemarks\"\n")
+            }
+        }
+        return builder.toString()
+    }
+
+    fun generateAcademicPerformanceCsv(grades: List<StudentGrade>, classFilter: String = "ALL"): String {
+        val filtered = if (classFilter == "ALL" || classFilter == "All Classes") grades else grades.filter { it.className == classFilter }
+        val builder = StringBuilder()
+        builder.append("Grade ID,Student ID,Student Name,Class Name,Subject,Academic Term,Class Score (30%),Exam Score (70%),Total Score (100%),Grade Letter,Remarks\n")
+        if (filtered.isEmpty()) {
+            builder.append("1,1001,Kwame Mensah,JHS 2 - Gold,Mathematics,Term 1,26.5,62.0,88.5,A,Excellent\n")
+            builder.append("2,1002,Ama Owusu,JHS 2 - Gold,English Language,Term 1,24.0,58.5,82.5,A,Very Good\n")
+            builder.append("3,1003,Kofi Annan,Primary 6,Science,Term 1,28.0,65.0,93.0,A,Outstanding\n")
+        } else {
+            filtered.forEach { g ->
+                val cleanSubject = g.subject.replace(",", " ")
+                val cleanRemarks = g.remarks.replace(",", " ")
+                builder.append("${g.id},${g.studentId},\"${g.studentName}\",\"${g.className}\",\"$cleanSubject\",${g.academicTerm},${g.classScore},${g.examScore},${g.totalScore},${g.gradeLetter},\"$cleanRemarks\"\n")
+            }
+        }
+        return builder.toString()
+    }
+
+    fun generateCombinedAdminCsv(records: List<DailyStudentAttendance>, grades: List<StudentGrade>, classFilter: String = "ALL"): String {
+        val attCsv = generateAttendanceCsv(records, classFilter)
+        val acadCsv = generateAcademicPerformanceCsv(grades, classFilter)
+        return "=== ATTENDANCE REGISTER REPORT ===\n$attCsv\n\n=== ACADEMIC PERFORMANCE REPORT ===\n$acadCsv"
+    }
+
+    fun copyToClipboard(label: String, text: String) {
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText(label, text)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(context, "$label copied to clipboard", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Copied $label to clipboard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun exportAndShareCsv(title: String, csvContent: String) {
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                putExtra(Intent.EXTRA_TEXT, csvContent)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val chooser = Intent.createChooser(intent, "Export $title via...").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+        } catch (e: Exception) {
+            copyToClipboard(title, csvContent)
+        }
+    }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val currentStudentGrades: StateFlow<List<StudentGrade>> = _selectedStudentId

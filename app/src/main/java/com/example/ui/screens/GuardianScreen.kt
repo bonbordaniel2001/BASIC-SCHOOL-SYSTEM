@@ -1,9 +1,11 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -15,14 +17,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.ClassTimetable
 import com.example.data.model.DailyStudentAttendance
 import com.example.data.model.FeeTransaction
+import com.example.data.model.StudentFeePayment
 import com.example.data.model.StudentGrade
 import com.example.data.model.StudentLedger
 import com.example.ui.components.MomoPaymentDialog
+import com.example.ui.theme.GhanaEmeraldGreen
 import com.example.ui.theme.GhanaGoldAccent
 import com.example.ui.theme.GhanaNavyPrimary
 import com.example.ui.viewmodel.SchoolViewModel
@@ -36,14 +42,20 @@ fun GuardianScreen(
     val selectedStudentId by viewModel.selectedStudentId.collectAsState()
     val currentLedger by viewModel.currentStudentLedger.collectAsState()
     val transactions by viewModel.currentStudentTransactions.collectAsState()
+    val feePayments by viewModel.currentStudentFeePayments.collectAsState()
     val attendanceRecords by viewModel.currentStudentDailyAttendance.collectAsState()
     val studentGrades by viewModel.currentStudentGrades.collectAsState()
+    val allTimetables by viewModel.allTimetables.collectAsState()
 
-    var selectedTab by remember { mutableStateOf(0) } // 0: Financials, 1: Attendance Report, 2: Grades & Performance
+    var selectedTab by remember { mutableStateOf(0) } // 0: Financials, 1: Attendance Report, 2: Grades & Performance, 3: Class Timetable
+    var guardianTimetableDayFilter by remember { mutableStateOf("ALL") }
     var attendanceFilter by remember { mutableStateOf("ALL") } // ALL, PRESENT, ABSENT, EXCUSED
     var showAbsenceNoticeDialog by remember { mutableStateOf(false) }
     var absenceDateInput by remember { mutableStateOf("2026-07-28") }
     var absenceReasonInput by remember { mutableStateOf("Medical / Dental Appointment") }
+
+    var selectedFeePaymentForReceipt by remember { mutableStateOf<StudentFeePayment?>(null) }
+    var showDigitalReceiptDialog by remember { mutableStateOf(false) }
 
     val showMomoDialog by viewModel.showMomoDialog.collectAsState()
     val momoNetwork by viewModel.momoNetwork.collectAsState()
@@ -65,6 +77,114 @@ fun GuardianScreen(
             onReferenceChange = { viewModel.setMomoReference(it) },
             onSubmitPayment = { viewModel.submitMomoPayment() },
             onDismiss = { viewModel.closeMomoDialog() }
+        )
+    }
+
+    if (showDigitalReceiptDialog && selectedFeePaymentForReceipt != null) {
+        val r = selectedFeePaymentForReceipt!!
+        AlertDialog(
+            onDismissRequest = { showDigitalReceiptDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(GhanaNavyPrimary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = GhanaGoldAccent, modifier = Modifier.size(20.dp))
+                    }
+                    Column {
+                        Text("Official Fee Receipt", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text(r.receiptNumber, fontSize = 11.sp, color = GhanaNavyPrimary, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = GhanaNavyPrimary.copy(alpha = 0.06f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("AKOMA PRIMARY & JHS", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, color = GhanaNavyPrimary)
+                            Text("Official Student Fee Payment Receipt", fontSize = 10.sp, color = Color.Gray)
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Student Name:", fontSize = 11.sp, color = Color.Gray)
+                            Text(r.studentName, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Class:", fontSize = 11.sp, color = Color.Gray)
+                            Text(r.className, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Fee Category:", fontSize = 11.sp, color = Color.Gray)
+                            Text(r.feeCategory, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GhanaNavyPrimary)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Academic Term:", fontSize = 11.sp, color = Color.Gray)
+                            Text(r.academicTerm, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Payment Date:", fontSize = 11.sp, color = Color.Gray)
+                            Text(r.paymentDate, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Payment Method:", fontSize = 11.sp, color = Color.Gray)
+                            Text(r.paymentMethod, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Transaction Ref:", fontSize = 11.sp, color = Color.Gray)
+                            Text(r.transactionRef, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Recorded By:", fontSize = 11.sp, color = Color.Gray)
+                            Text(r.recordedBy, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Amount Paid:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("GH₵ ${String.format("%.2f", r.amountPaidGhc)}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF2E7D32))
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Remaining Balance:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                            Text("GH₵ ${String.format("%.2f", r.remainingBalanceGhc)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = GhanaGoldAccent)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.copyToClipboard("Fee Receipt ${r.receiptNumber}", "Official Receipt #${r.receiptNumber}\nStudent: ${r.studentName} (${r.className})\nAmount: GH₵ ${String.format("%.2f", r.amountPaidGhc)}\nCategory: ${r.feeCategory}\nRef: ${r.transactionRef}\nRemaining Balance: GH₵ ${String.format("%.2f", r.remainingBalanceGhc)}")
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary)
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Copy Receipt", fontSize = 11.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDigitalReceiptDialog = false }) {
+                    Text("Close")
+                }
+            }
         )
     }
 
@@ -122,6 +242,87 @@ fun GuardianScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp)
     ) {
+        // --- GUARDIAN PORTAL GROUPED TASK HUB & DASHBOARD NAVIGATION ---
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("guardian_grouped_task_hub_card")
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.Apps, contentDescription = null, tint = GhanaNavyPrimary)
+                            Column {
+                                Text(
+                                    text = "Guardian Portal Tasks",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GhanaNavyPrimary
+                                )
+                                Text(
+                                    text = "Parental task shortcuts & app navigation",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // Button taking guardian to the App Dashboard
+                        Button(
+                            onClick = { viewModel.setViewMode(com.example.ui.viewmodel.ViewMode.HOME) },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                            modifier = Modifier.testTag("guardian_task_go_to_dashboard")
+                        ) {
+                            Icon(Icons.Default.Dashboard, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("App Dashboard", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.openMomoDialog() },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = GhanaEmeraldGreen),
+                            modifier = Modifier.weight(1f).testTag("guardian_task_pay_fees")
+                        ) {
+                            Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Pay Fees (MoMo)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { selectedTab = 2 },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                            modifier = Modifier.weight(1f).testTag("guardian_task_terminal_report")
+                        ) {
+                            Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Report Card", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
         // --- SECTION 1: WARD SELECTOR (Guardian Wards) ---
         item {
             Card(
@@ -221,6 +422,13 @@ fun GuardianScreen(
                     text = { Text("Grades", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
                     icon = { Icon(Icons.Default.MilitaryTech, contentDescription = null) },
                     modifier = Modifier.testTag("tab_grades")
+                )
+                Tab(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    text = { Text("Timetable", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Schedule, contentDescription = null) },
+                    modifier = Modifier.testTag("tab_timetable")
                 )
             }
         }
@@ -412,19 +620,19 @@ fun GuardianScreen(
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "Payment Mini-Statement",
+                        text = "Payment History & Official Receipts",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Official receipts & MoMo transaction log",
+                        text = "Official digital receipts & MoMo payment history",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            if (transactions.isEmpty()) {
+            if (feePayments.isEmpty() && transactions.isEmpty()) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -441,7 +649,99 @@ fun GuardianScreen(
                     }
                 }
             } else {
-                items(transactions, key = { it.id }) { txn ->
+                itemsIndexed(feePayments, key = { index, fp -> "fp_${fp.id}_$index" }) { _, fp ->
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedFeePaymentForReceipt = fp
+                                showDigitalReceiptDialog = true
+                            }
+                            .testTag("fee_payment_card_${fp.id}")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(GhanaNavyPrimary.copy(alpha = 0.1f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ReceiptLong,
+                                        contentDescription = null,
+                                        tint = GhanaNavyPrimary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(
+                                            text = fp.feeCategory,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Surface(
+                                            color = GhanaNavyPrimary,
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = fp.receiptNumber,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = "${fp.paymentMethod} • Ref: ${fp.transactionRef}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "${fp.paymentDate} • Rem Bal: GH₵ ${String.format("%.2f", fp.remainingBalanceGhc)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = "GH₵ ${String.format("%.2f", fp.amountPaidGhc)}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF2E7D32)
+                                )
+                                Text(
+                                    text = "View Receipt",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GhanaNavyPrimary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                itemsIndexed(transactions, key = { index, txn -> "txn_${txn.id}_$index" }) { _, txn ->
                     ReceiptHistoryCard(transaction = txn)
                 }
             }
@@ -577,7 +877,7 @@ fun GuardianScreen(
                     }
                 }
             } else {
-                items(filteredList, key = { it.id }) { record ->
+                itemsIndexed(filteredList, key = { index, record -> "att_${record.id}_$index" }) { _, record ->
                     AttendanceRecordCard(record = record)
                 }
             }
@@ -694,8 +994,174 @@ fun GuardianScreen(
                     }
                 }
             } else {
-                items(studentGrades, key = { it.id }) { grade ->
+                itemsIndexed(studentGrades, key = { index, grade -> "grade_${grade.id}_$index" }) { _, grade ->
                     SubjectGradeCard(grade = grade)
+                }
+            }
+        }
+
+        if (selectedTab == 3) {
+            // --- TAB 3: WARD'S CLASS TIMETABLE VIEW ---
+            val wardClassName = currentLedger?.className ?: "JHS 2 - Gold"
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("guardian_timetable_header")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "📅 ${currentLedger?.studentName ?: "Ward"}'s Timetable",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = GhanaNavyPrimary
+                                )
+                                Text(
+                                    text = "Class: $wardClassName • Weekly Subject Schedule",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = GhanaEmeraldGreen.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "Active Schedule",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GhanaEmeraldGreen,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        // Day Filter Chips
+                        Text("Select Day:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("ALL", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday").forEach { day ->
+                                FilterChip(
+                                    selected = guardianTimetableDayFilter == day,
+                                    onClick = { guardianTimetableDayFilter = day },
+                                    label = { Text(day, fontSize = 10.sp) },
+                                    modifier = Modifier.testTag("guardian_filter_day_$day")
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            val wardSlots = allTimetables.filter { slot ->
+                (slot.className.equals(wardClassName, ignoreCase = true) || slot.className.contains(wardClassName, ignoreCase = true) || wardClassName.contains(slot.className, ignoreCase = true)) &&
+                        (guardianTimetableDayFilter == "ALL" || slot.dayOfWeek.equals(guardianTimetableDayFilter, ignoreCase = true))
+            }.sortedWith(compareBy({
+                when (it.dayOfWeek) {
+                    "Monday" -> 1
+                    "Tuesday" -> 2
+                    "Wednesday" -> 3
+                    "Thursday" -> 4
+                    "Friday" -> 5
+                    else -> 6
+                }
+            }, { it.periodNumber }))
+
+            if (wardSlots.isEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.EventBusy, contentDescription = null, modifier = Modifier.size(36.dp), tint = Color.Gray)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("No timetable schedule posted yet for $wardClassName ($guardianTimetableDayFilter)", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        }
+                    }
+                }
+            } else {
+                items(wardSlots) { slot ->
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .testTag("guardian_timetable_slot_${slot.id}")
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = GhanaNavyPrimary
+                                ) {
+                                    Text(
+                                        text = "${slot.dayOfWeek} • Period ${slot.periodNumber}",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "⏰ ${slot.startTime} - ${slot.endTime}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = slot.subject,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "👨‍🏫 Teacher: ${slot.teacherName}",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "🏫 ${slot.classroom}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = GhanaNavyPrimary
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
