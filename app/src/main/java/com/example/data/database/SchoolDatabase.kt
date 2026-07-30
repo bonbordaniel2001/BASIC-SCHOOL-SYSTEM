@@ -40,9 +40,12 @@ import com.example.data.model.*
         LessonPlan::class,
         StudentAddRequest::class,
         StudentFeePayment::class,
-        DirectMessage::class
+        DirectMessage::class,
+        TeacherLoanRequest::class,
+        DigitalResource::class,
+        ClassAssignment::class
     ],
-    version = 17,
+    version = 19,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

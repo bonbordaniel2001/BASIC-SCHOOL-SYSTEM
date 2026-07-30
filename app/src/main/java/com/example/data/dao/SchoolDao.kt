@@ -242,10 +242,58 @@ interface SchoolDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAllDirectMessages(messages: List<DirectMessage>)
 
+    // --- Teacher Loan Requests ---
+    @Query("SELECT * FROM teacher_loan_requests ORDER BY id DESC")
+    fun getAllTeacherLoanRequests(): Flow<List<TeacherLoanRequest>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTeacherLoanRequest(request: TeacherLoanRequest): Long
+
+    @Update
+    suspend fun updateTeacherLoanRequest(request: TeacherLoanRequest)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllTeacherLoanRequests(requests: List<TeacherLoanRequest>)
+
     // --- School Settings ---
     @Query("SELECT * FROM school_settings WHERE id = 1 LIMIT 1")
     fun getSchoolSettings(): Flow<SchoolSettings?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveSchoolSettings(settings: SchoolSettings)
+
+    // --- Digital Library & Resources ---
+    @Query("SELECT * FROM digital_resources ORDER BY id DESC")
+    fun getAllDigitalResources(): Flow<List<DigitalResource>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDigitalResource(resource: DigitalResource): Long
+
+    @Delete
+    suspend fun deleteDigitalResource(resource: DigitalResource)
+
+    @Query("DELETE FROM digital_resources WHERE id = :id")
+    suspend fun deleteDigitalResourceById(id: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllDigitalResources(resources: List<DigitalResource>)
+
+    // --- Class Assignments ---
+    @Query("SELECT * FROM class_assignments ORDER BY id DESC")
+    fun getAllClassAssignments(): Flow<List<ClassAssignment>>
+
+    @Query("SELECT * FROM class_assignments WHERE className = :className ORDER BY id DESC")
+    fun getAssignmentsForClass(className: String): Flow<List<ClassAssignment>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertClassAssignment(assignment: ClassAssignment): Long
+
+    @Delete
+    suspend fun deleteClassAssignment(assignment: ClassAssignment)
+
+    @Query("DELETE FROM class_assignments WHERE id = :id")
+    suspend fun deleteClassAssignmentById(id: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllClassAssignments(assignments: List<ClassAssignment>)
 }

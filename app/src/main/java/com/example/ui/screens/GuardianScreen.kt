@@ -21,12 +21,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.ClassAssignment
 import com.example.data.model.ClassTimetable
 import com.example.data.model.DailyStudentAttendance
+import com.example.data.model.DigitalResource
 import com.example.data.model.FeeTransaction
 import com.example.data.model.StudentFeePayment
 import com.example.data.model.StudentGrade
 import com.example.data.model.StudentLedger
+import com.example.ui.components.LoadingOverlay
+import com.example.ui.components.LoadingSpinner
 import com.example.ui.components.MomoPaymentDialog
 import com.example.ui.theme.GhanaEmeraldGreen
 import com.example.ui.theme.GhanaGoldAccent
@@ -46,8 +50,18 @@ fun GuardianScreen(
     val attendanceRecords by viewModel.currentStudentDailyAttendance.collectAsState()
     val studentGrades by viewModel.currentStudentGrades.collectAsState()
     val allTimetables by viewModel.allTimetables.collectAsState()
+    val allDirectMessages by viewModel.allDirectMessages.collectAsState()
+    val allDigitalResources by viewModel.allDigitalResources.collectAsState()
+    val allClassAssignments by viewModel.allClassAssignments.collectAsState()
+    val uiLoadingState by viewModel.uiLoadingState.collectAsState()
+    val loadingMessage by viewModel.loadingMessage.collectAsState()
 
-    var selectedTab by remember { mutableStateOf(0) } // 0: Financials, 1: Attendance Report, 2: Grades & Performance, 3: Class Timetable
+    var selectedTab by remember { mutableStateOf(0) } // 0: Financials, 1: Attendance, 2: Grades, 3: Timetable, 4: Teacher Messaging, 5: Ward Textbooks, 6: Ward Assignments
+    var guardianLibCategoryFilter by remember { mutableStateOf("ALL") }
+    var guardianAssignmentPeriodFilter by remember { mutableStateOf("ALL") }
+    var guardianTeacherRecipient by remember { mutableStateOf("Mr. Kojo Mensah (Class Teacher)") }
+    var guardianMessageSubject by remember { mutableStateOf("Inquiry regarding homework & attendance") }
+    var guardianMessageBody by remember { mutableStateOf("Good afternoon Mr. Mensah, I would like to confirm if Ama completed all homework assignments for this week.") }
     var guardianTimetableDayFilter by remember { mutableStateOf("ALL") }
     var attendanceFilter by remember { mutableStateOf("ALL") } // ALL, PRESENT, ABSENT, EXCUSED
     var showAbsenceNoticeDialog by remember { mutableStateOf(false) }
@@ -392,12 +406,13 @@ fun GuardianScreen(
             }
         }
 
-        // --- SECTION 2: NAVIGATION TAB ROW (Financials vs Attendance vs Grades) ---
+        // --- SECTION 2: NAVIGATION TAB ROW ---
         item {
-            TabRow(
+            ScrollableTabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 contentColor = MaterialTheme.colorScheme.primary,
+                edgePadding = 8.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
@@ -429,6 +444,27 @@ fun GuardianScreen(
                     text = { Text("Timetable", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
                     icon = { Icon(Icons.Default.Schedule, contentDescription = null) },
                     modifier = Modifier.testTag("tab_timetable")
+                )
+                Tab(
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
+                    text = { Text("Teacher Messaging", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.QuestionAnswer, contentDescription = null) },
+                    modifier = Modifier.testTag("tab_teacher_messaging")
+                )
+                Tab(
+                    selected = selectedTab == 5,
+                    onClick = { selectedTab = 5 },
+                    text = { Text("Ward Textbooks", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.MenuBook, contentDescription = null) },
+                    modifier = Modifier.testTag("tab_ward_textbooks")
+                )
+                Tab(
+                    selected = selectedTab == 6,
+                    onClick = { selectedTab = 6 },
+                    text = { Text("Ward Assignments", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Assignment, contentDescription = null) },
+                    modifier = Modifier.testTag("tab_ward_assignments")
                 )
             }
         }
@@ -1153,7 +1189,7 @@ fun GuardianScreen(
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                Text(
+                                 Text(
                                     text = "🏫 ${slot.classroom}",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium,
@@ -1165,6 +1201,415 @@ fun GuardianScreen(
                 }
             }
         }
+
+        if (selectedTab == 4) {
+            // ==========================================
+            // FEATURE 5: GUARDIAN TO TEACHER MESSAGING
+            // ==========================================
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("guardian_teacher_messaging_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.QuestionAnswer, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Message Class Teacher", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Direct communication regarding child academic welfare & homework", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                        OutlinedTextField(
+                            value = guardianTeacherRecipient,
+                            onValueChange = { guardianTeacherRecipient = it },
+                            label = { Text("Teacher Name / Role") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("guardian_msg_teacher_field")
+                        )
+
+                        OutlinedTextField(
+                            value = guardianMessageSubject,
+                            onValueChange = { guardianMessageSubject = it },
+                            label = { Text("Subject") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("guardian_msg_subject_field")
+                        )
+
+                        OutlinedTextField(
+                            value = guardianMessageBody,
+                            onValueChange = { guardianMessageBody = it },
+                            label = { Text("Message Body") },
+                            minLines = 3,
+                            modifier = Modifier.fillMaxWidth().testTag("guardian_msg_body_field")
+                        )
+
+                        Button(
+                            onClick = {
+                                viewModel.sendDirectMessage(
+                                    senderName = "Mrs. Grace Mensah (Guardian)",
+                                    senderRole = "GUARDIAN",
+                                    recipientName = guardianTeacherRecipient,
+                                    recipientRole = "TEACHER",
+                                    childName = currentLedger?.studentName ?: "Ama Serwaa Mensah",
+                                    subject = guardianMessageSubject,
+                                    messageBody = guardianMessageBody
+                                )
+                                guardianMessageBody = ""
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("guardian_send_message_button")
+                        ) {
+                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Send Direct Message to Teacher", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "💬 Message Conversation History",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = GhanaNavyPrimary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                )
+            }
+
+            if (allDirectMessages.isEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = "No messages exchanged yet.", fontSize = 13.sp, modifier = Modifier.padding(20.dp))
+                    }
+                }
+            } else {
+                items(allDirectMessages) { msg ->
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("guardian_msg_item_${msg.id}")
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("From: ${msg.senderName}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (msg.senderRole == "GUARDIAN") GhanaEmeraldGreen.copy(alpha = 0.15f) else GhanaNavyPrimary.copy(alpha = 0.1f)
+                                    ) {
+                                        Text(msg.senderRole, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                    }
+                                }
+                                Text(msg.timestampString, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("To: ${msg.recipientName}  |  Re: Student ${msg.childName}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            Text("Subject: ${msg.subject}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(msg.messageBody, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (selectedTab == 5) {
+            // ==========================================
+            // FEATURE: WARD TEXTBOOKS & DIGITAL LIBRARY (GUARDIAN RBAC)
+            // ==========================================
+            val wardName = currentLedger?.studentName ?: "Ama Serwaa Mensah"
+            val wardClass = currentLedger?.className ?: "JHS 2 - Gold"
+
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("guardian_ward_textbooks_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.MenuBook, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Ward Digital Library & Textbooks", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Official syllabus books & learning resources for $wardName", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                        // Granular RBAC Notification Banner
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = GhanaGoldAccent.copy(alpha = 0.18f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = GhanaNavyPrimary, modifier = Modifier.size(18.dp))
+                                Column {
+                                    Text("🔒 Granular Role-Based Access Enforced", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GhanaNavyPrimary)
+                                    Text("Displaying learning resources & textbooks strictly for ward: $wardName ($wardClass).", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+
+                        // Category Filter Chips
+                        val categories = listOf("ALL", "TEXTBOOK", "SYLLABUS", "CURRICULUM", "SCHOOL_HISTORY")
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            categories.forEach { cat ->
+                                FilterChip(
+                                    selected = guardianLibCategoryFilter == cat,
+                                    onClick = { guardianLibCategoryFilter = cat },
+                                    label = { Text(cat.replace("_", " "), fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = GhanaNavyPrimary,
+                                        selectedLabelColor = Color.White
+                                    ),
+                                    modifier = Modifier.testTag("guardian_lib_filter_${cat}")
+                                )
+                            }
+                        }
+
+                        val wardAccessibleResources = allDigitalResources.filter { res ->
+                            (res.targetClass == "ALL" || res.targetClass == wardClass) &&
+                            res.targetAudience in listOf("ALL", "GUARDIANS_ONLY")
+                        }.filter { res ->
+                            guardianLibCategoryFilter == "ALL" || res.category == guardianLibCategoryFilter
+                        }
+
+                        if (wardAccessibleResources.isEmpty()) {
+                            Text("No textbooks or learning materials posted for $wardClass yet.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                wardAccessibleResources.forEach { res ->
+                                    Card(
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                        modifier = Modifier.fillMaxWidth().testTag("guardian_resource_item_${res.id}")
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(res.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text("Publisher: ${res.authorOrPublisher} • Format: ${res.fileFormat}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.triggerPortalDataRefresh("Downloading '${res.title}' for $wardName...")
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                    modifier = Modifier.testTag("download_ward_resource_${res.id}")
+                                                ) {
+                                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Download", fontSize = 11.sp)
+                                                }
+                                            }
+
+                                            if (res.description.isNotBlank()) {
+                                                Text(res.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                                            }
+
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaGoldAccent.copy(alpha = 0.2f)) {
+                                                    Text("Category: ${res.category.replace("_", " ")}", fontSize = 9.sp, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaEmeraldGreen.copy(alpha = 0.15f)) {
+                                                    Text("Class: ${res.targetClass}", fontSize = 9.sp, color = Color(0xFF0F5132), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaNavyPrimary.copy(alpha = 0.1f)) {
+                                                    Text("Subject: ${res.subject}", fontSize = 9.sp, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (selectedTab == 6) {
+            // ==========================================
+            // FEATURE: WARD HOMEWORK & ASSIGNMENT TRACKING
+            // ==========================================
+            val wardName = currentLedger?.studentName ?: "Ama Serwaa Mensah"
+            val wardClass = currentLedger?.className ?: "JHS 2 - Gold"
+
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("guardian_ward_assignments_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Assignment, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Ward Homework & Assignments", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Track homework assigned to $wardName ($wardClass)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                        // Frequency Period Filters
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("Filter Period:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            listOf("ALL", "DAILY", "WEEKLY", "TERMLY").forEach { period ->
+                                FilterChip(
+                                    selected = guardianAssignmentPeriodFilter == period,
+                                    onClick = { guardianAssignmentPeriodFilter = period },
+                                    label = { Text(period, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = GhanaNavyPrimary,
+                                        selectedLabelColor = Color.White
+                                    ),
+                                    modifier = Modifier.testTag("guardian_assignment_filter_${period}")
+                                )
+                            }
+                        }
+
+                        val wardAssignments = allClassAssignments.filter { ass ->
+                            ass.className == wardClass
+                        }.filter { ass ->
+                            guardianAssignmentPeriodFilter == "ALL" || ass.frequencyPeriod == guardianAssignmentPeriodFilter
+                        }
+
+                        if (wardAssignments.isEmpty()) {
+                            Text("No pending homework assignments found for $wardClass in this period.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                wardAssignments.forEach { ass ->
+                                    Card(
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                        modifier = Modifier.fillMaxWidth().testTag("guardian_assignment_item_${ass.id}")
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(ass.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text("Subject: ${ass.subject} • Teacher: ${ass.teacherName}", fontSize = 11.sp, color = GhanaNavyPrimary, fontWeight = FontWeight.SemiBold)
+                                                }
+
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.triggerPortalDataRefresh("Downloading assignment attachment for '${ass.title}'...")
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                    modifier = Modifier.testTag("download_assignment_attachment_${ass.id}")
+                                                ) {
+                                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Attachment", fontSize = 10.sp)
+                                                }
+                                            }
+
+                                            Text(ass.description, fontSize = 11.sp)
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaGoldAccent.copy(alpha = 0.25f)) {
+                                                    Text("Period: ${ass.frequencyPeriod}", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaNavyPrimary.copy(alpha = 0.1f)) {
+                                                    Text("Due: ${ass.dueDateString}", fontSize = 9.sp, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaEmeraldGreen.copy(alpha = 0.15f)) {
+                                                    Text("Max Score: ${ass.maxScore} pts", fontSize = 9.sp, color = Color(0xFF0F5132), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
     }
 }
 

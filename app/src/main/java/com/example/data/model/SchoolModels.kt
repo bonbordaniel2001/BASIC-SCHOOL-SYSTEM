@@ -27,6 +27,23 @@ data class StaffMember(
 )
 
 /**
+ * Teacher Loan Request Entity (Teacher Portal -> Proprietor Approval)
+ */
+@Entity(tableName = "teacher_loan_requests")
+data class TeacherLoanRequest(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val teacherId: Long = 0,
+    val teacherName: String,
+    val amountGhc: Double,
+    val repaymentDurationMonths: Int = 6,
+    val repaymentTerms: String = "Monthly payroll deduction",
+    val reason: String,
+    val requestedDate: String,
+    val status: String = "PENDING", // "PENDING", "APPROVED", "REJECTED"
+    val decisionNote: String = ""
+)
+
+/**
  * Transaction Approval Request Entity (Loan Requests & Fee Overrides)
  */
 @Entity(tableName = "transaction_approvals")
@@ -223,7 +240,8 @@ data class SchoolSettings(
     @PrimaryKey val id: Long = 1,
     val schoolName: String = "St. Talafor Academy",
     val schoolId: String = "SCH-AKM-2026",
-    val campusLocation: String = "Sibi, Oti Region, Ghana"
+    val campusLocation: String = "Sibi, Oti Region, Ghana",
+    val officialStartTime: String = "08:00 AM"
 )
 
 /**
@@ -248,5 +266,46 @@ data class StudentTermPerformanceStat(
     val studentCount: Int = 0,
     val highestScore: Double = 0.0,
     val passRatePercentage: Double = 0.0
+)
+
+/**
+ * Digital Library & Resource Entity (Textbooks, Syllabi, Curriculums, Media, History, etc.)
+ */
+@Entity(tableName = "digital_resources")
+data class DigitalResource(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val authorOrPublisher: String,
+    val category: String, // "TEXTBOOK", "SYLLABUS", "CURRICULUM", "REFERENCE", "SCHOOL_HISTORY", "PROMOTIONAL_VIDEO", "SCHOOL_MEDIA"
+    val resourceType: String, // "DOCUMENT", "BOOK", "VIDEO", "IMAGE"
+    val targetClass: String = "ALL", // "ALL", "JHS 1", "JHS 2 - Gold", "JHS 3", "Primary 4", "Primary 5", "Primary 6"
+    val subject: String = "ALL", // "ALL", "Mathematics", "Integrated Science", "English Language", "Social Studies", "ICT"
+    val fileUrlOrPath: String = "storage/library/document.pdf",
+    val fileSizeBytes: Long = 4200000L,
+    val fileFormat: String = "PDF", // "PDF", "EPUB", "MP4", "JPG", "PNG"
+    val uploadedBy: String = "Proprietor",
+    val uploadDateString: String = "2026-07-29",
+    val targetAudience: String = "ALL", // "ALL", "TEACHERS_ONLY", "GUARDIANS_ONLY"
+    val description: String = ""
+)
+
+/**
+ * Class Assignment Entity (Homework, Projects, Exercises posted by Teachers for specific classes)
+ */
+@Entity(tableName = "class_assignments")
+data class ClassAssignment(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val description: String,
+    val className: String, // e.g., "JHS 2 - Gold", "Primary 4"
+    val subject: String, // e.g., "Mathematics", "Integrated Science"
+    val teacherId: Long = 1,
+    val teacherName: String = "Mr. Kojo Mensah",
+    val assignedDateString: String = "2026-07-29",
+    val dueDateString: String = "2026-08-05",
+    val attachmentPathOrUrl: String = "storage/assignments/assignment_sheet.pdf",
+    val maxScore: Int = 100,
+    val frequencyPeriod: String = "WEEKLY", // "DAILY", "WEEKLY", "TERMLY"
+    val termLabel: String = "Term 3 2026"
 )
 

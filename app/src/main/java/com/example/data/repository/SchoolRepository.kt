@@ -39,6 +39,10 @@ class SchoolRepository(
     val allStudentProfiles: Flow<List<StudentProfile>> = dao.getAllStudentProfiles()
     val activeUserAccount: Flow<UserAccount?> = dao.getActiveUserAccount()
     val schoolSettings: Flow<SchoolSettings?> = dao.getSchoolSettings()
+    val allDirectMessages: Flow<List<DirectMessage>> = dao.getAllDirectMessages()
+    val allTeacherLoanRequests: Flow<List<TeacherLoanRequest>> = dao.getAllTeacherLoanRequests()
+    val allDigitalResources: Flow<List<DigitalResource>> = dao.getAllDigitalResources()
+    val allClassAssignments: Flow<List<ClassAssignment>> = dao.getAllClassAssignments()
     val allGuardians: Flow<List<GuardianProfile>> = guardianDao?.getAllGuardians() ?: emptyFlow()
     val allTeachers: Flow<List<TeacherProfile>> = teacherDao?.getAllTeachers() ?: emptyFlow()
     val allGrades: Flow<List<StudentGrade>> = gradeDao?.getAllGrades() ?: emptyFlow()
@@ -48,6 +52,12 @@ class SchoolRepository(
     val allSchoolEvents: Flow<List<SchoolEvent>> = schoolEventDao?.getAllEvents() ?: emptyFlow()
     val allTimetables: Flow<List<ClassTimetable>> = timetableDao?.getAllTimetables() ?: emptyFlow()
     val unsyncedAttendance: Flow<List<AttendanceRecord>> = dao.getUnsyncedAttendance()
+
+    suspend fun insertDigitalResource(resource: DigitalResource): Long = dao.insertDigitalResource(resource)
+    suspend fun deleteDigitalResourceById(id: Long) = dao.deleteDigitalResourceById(id)
+
+    suspend fun insertClassAssignment(assignment: ClassAssignment): Long = dao.insertClassAssignment(assignment)
+    suspend fun deleteClassAssignmentById(id: Long) = dao.deleteClassAssignmentById(id)
 
     fun getNotificationsForRole(role: String): Flow<List<AppNotification>> =
         dao.getNotificationsForRole(role)
@@ -332,19 +342,160 @@ class SchoolRepository(
         val staffList = dao.getAllStaff().first()
         val staff = staffList.find { it.id == staffId } ?: return
         val oldSalary = staff.monthlySalaryGhc
+
+        val isIncrease = adjustmentType.equals("INCREASE", ignoreCase = true)
+        if (isIncrease && newSalaryGhc <= oldSalary) {
+            throw IllegalArgumentException("Validation Error: New salary (GH₵ ${String.format("%.2f", newSalaryGhc)}) must be strictly greater than current salary (GH₵ ${String.format("%.2f", oldSalary)}) for an increase.")
+        }
+        if (!isIncrease && newSalaryGhc >= oldSalary) {
+            throw IllegalArgumentException("Validation Error: New salary (GH₵ ${String.format("%.2f", newSalaryGhc)}) must be strictly less than current salary (GH₵ ${String.format("%.2f", oldSalary)}) for a reduction.")
+        }
+
         val updatedStaff = staff.copy(
             monthlySalaryGhc = newSalaryGhc,
             salaryNotes = "$adjustmentType: From GH₵ ${String.format("%.2f", oldSalary)} to GH₵ ${String.format("%.2f", newSalaryGhc)}. Reason: $reason"
         )
         dao.updateStaff(updatedStaff)
 
-        val titleStr = if (adjustmentType.equals("INCREASE", ignoreCase = true)) "Staff Payment Increased" else "Staff Payment Reduced"
+        val titleStr = if (isIncrease) "Staff Payment Increased" else "Staff Payment Reduced"
         addNotification(
             recipientRole = "PROPRIETOR",
             type = "SALARY_ADJUSTMENT",
             title = titleStr,
             message = "Payment for ${staff.name} updated from GH₵ ${String.format("%.2f", oldSalary)} to GH₵ ${String.format("%.2f", newSalaryGhc)}. Reason: $reason"
         )
+    }
+
+    // --- Teacher Loan Requests ---
+    suspend fun submitTeacherLoanRequest(
+        teacherId: Long = 1,
+        teacherName: String,
+        amountGhc: Double,
+        durationMonths: Int,
+        terms: String,
+        reason: String
+    ): Long {
+        val dateStr = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+        val loanReq = TeacherLoanRequest(
+            teacherId = teacherId,
+            teacherName = teacherName,
+            amountGhc = amountGhc,
+            repaymentDurationMonths = durationMonths,
+            repaymentTerms = terms.ifBlank { "Monthly salary deduction ($durationMonths months)" },
+            reason = reason,
+            requestedDate = dateStr,
+            status = "PENDING"
+        )
+        val id = dao.insertTeacherLoanRequest(loanReq)
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "LOAN_REQUEST",
+            title = "New Teacher Loan Request",
+            message = "$teacherName submitted a loan request of GH₵ ${String.format("%.2f", amountGhc)} for $durationMonths months."
+        )
+        return id
+    }
+
+    suspend fun approveTeacherLoanRequest(requestId: Long, note: String = "") {
+        val requests = dao.getAllTeacherLoanRequests().first()
+        val req = requests.find { it.id == requestId } ?: return
+        val updated = req.copy(status = "APPROVED", decisionNote = note.ifBlank { "Approved by Proprietor Office" })
+        dao.updateTeacherLoanRequest(updated)
+        addNotification(
+            recipientRole = "TEACHER",
+            type = "LOAN_STATUS",
+            title = "Loan Request Approved",
+            message = "Your salary loan request of GH₵ ${String.format("%.2f", req.amountGhc)} has been APPROVED."
+        )
+    }
+
+    suspend fun rejectTeacherLoanRequest(requestId: Long, note: String = "") {
+        val requests = dao.getAllTeacherLoanRequests().first()
+        val req = requests.find { it.id == requestId } ?: return
+        val updated = req.copy(status = "REJECTED", decisionNote = note.ifBlank { "Request declined" })
+        dao.updateTeacherLoanRequest(updated)
+        addNotification(
+            recipientRole = "TEACHER",
+            type = "LOAN_STATUS",
+            title = "Loan Request Declined",
+            message = "Your salary loan request of GH₵ ${String.format("%.2f", req.amountGhc)} was DECLINED. Note: $note"
+        )
+    }
+
+    // --- Guardian-Teacher Direct Messages ---
+    suspend fun sendDirectMessage(
+        senderName: String,
+        senderRole: String,
+        recipientName: String,
+        recipientRole: String,
+        childName: String,
+        subject: String,
+        messageBody: String
+    ): Long {
+        val timeStr = java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val msg = DirectMessage(
+            senderName = senderName,
+            senderRole = senderRole,
+            recipientName = recipientName,
+            recipientRole = recipientRole,
+            childName = childName,
+            subject = subject,
+            messageBody = messageBody,
+            timestampString = timeStr
+        )
+        val id = dao.insertDirectMessage(msg)
+        addNotification(
+            recipientRole = recipientRole,
+            type = "DIRECT_MESSAGE",
+            title = "New Direct Message from $senderName",
+            message = "Subject: $subject (Re: $childName)"
+        )
+        return id
+    }
+
+    // --- Proprietor Official Start Time Settings ---
+    suspend fun updateOfficialStartTime(newStartTime: String) {
+        val currentSettings = dao.getSchoolSettings().first() ?: SchoolSettings()
+        dao.saveSchoolSettings(currentSettings.copy(officialStartTime = newStartTime))
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "SETTINGS_UPDATE",
+            title = "Clock-In Threshold Updated",
+            message = "Official school start time set to $newStartTime."
+        )
+    }
+
+    // --- Proprietor Broadcast Announcement ---
+    suspend fun sendBroadcastAnnouncement(title: String, messageText: String, targetRole: String = "ALL") {
+        val timeStr = java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        // Record log
+        val log = MessageLog(
+            targetType = targetRole,
+            targetDetail = if (targetRole == "ALL") "All Teachers & Guardians" else targetRole,
+            channel = "IN_APP_BROADCAST",
+            messageText = messageText,
+            recipientCount = 120,
+            estimatedCostGhc = 0.0,
+            timestampString = timeStr,
+            senderName = "Proprietor Office"
+        )
+        dao.insertMessage(log)
+
+        // Push AppNotification to Teachers and/or Guardians
+        val rolesToNotify = when (targetRole) {
+            "TEACHERS" -> listOf("TEACHER")
+            "GUARDIANS" -> listOf("GUARDIAN")
+            else -> listOf("TEACHER", "GUARDIAN", "ALL")
+        }
+
+        rolesToNotify.forEach { role ->
+            addNotification(
+                recipientRole = role,
+                type = "BROADCAST",
+                title = title,
+                message = messageText
+            )
+        }
     }
 
     suspend fun addStudentDirect(
@@ -1112,7 +1263,257 @@ class SchoolRepository(
             dao.insertAllFeePayments(initialFeePayments)
 
             // Initial School Settings
-            dao.saveSchoolSettings(SchoolSettings(id = 1, schoolName = "St. Talafor Academy", campusLocation = "Sibi, Oti Region, Ghana"))
+            dao.saveSchoolSettings(SchoolSettings(id = 1, schoolName = "St. Talafor Academy", campusLocation = "Sibi, Oti Region, Ghana", officialStartTime = "08:00 AM"))
+
+            // Seed Initial Direct Messages (Guardian <-> Teacher)
+            val initialDirectMessages = listOf(
+                DirectMessage(
+                    id = 1,
+                    senderName = "Mrs. Grace Mensah",
+                    senderRole = "GUARDIAN",
+                    recipientName = "Mr. Kojo Mensah (Class Teacher)",
+                    recipientRole = "TEACHER",
+                    childName = "Ama Serwaa Mensah",
+                    subject = "Inquiry regarding upcoming Science Project & Materials",
+                    messageBody = "Good morning Mr. Kojo, please could you clarify the list of materials needed for Ama's upcoming science project on solar circuits next week?",
+                    timestampString = "25 Jul 2026, 08:30",
+                    isRead = true
+                ),
+                DirectMessage(
+                    id = 2,
+                    senderName = "Mr. Kojo Mensah",
+                    senderRole = "TEACHER",
+                    recipientName = "Mrs. Grace Mensah",
+                    recipientRole = "GUARDIAN",
+                    childName = "Ama Serwaa Mensah",
+                    subject = "RE: Inquiry regarding upcoming Science Project",
+                    messageBody = "Good morning Mrs. Mensah. Ama will need a small 3V DC motor, copper wire, and 2 AA batteries. We have provided solar panels in school.",
+                    timestampString = "25 Jul 2026, 09:15",
+                    isRead = true
+                ),
+                DirectMessage(
+                    id = 3,
+                    senderName = "Mrs. Grace Mensah",
+                    senderRole = "GUARDIAN",
+                    recipientName = "Mr. Kojo Mensah (Class Teacher)",
+                    recipientRole = "TEACHER",
+                    childName = "Ama Serwaa Mensah",
+                    subject = "BECE Extra Revision Classes Attendance",
+                    messageBody = "Thank you very much! Ama will also attend Saturday morning revision class.",
+                    timestampString = "26 Jul 2026, 14:00",
+                    isRead = false
+                )
+            )
+            dao.insertAllDirectMessages(initialDirectMessages)
+
+            // Seed Initial Teacher Loan Requests
+            val initialLoanRequests = listOf(
+                TeacherLoanRequest(
+                    id = 1,
+                    teacherId = 1,
+                    teacherName = "Mr. Kojo Mensah",
+                    amountGhc = 1500.0,
+                    repaymentDurationMonths = 6,
+                    repaymentTerms = "Monthly salary deduction of GH₵ 250.00",
+                    reason = "Advance for university master's degree tuition fee installment",
+                    requestedDate = "20 Jul 2026",
+                    status = "PENDING"
+                ),
+                TeacherLoanRequest(
+                    id = 2,
+                    teacherId = 2,
+                    teacherName = "Ms. Abena Osei",
+                    amountGhc = 800.0,
+                    repaymentDurationMonths = 4,
+                    repaymentTerms = "Monthly salary deduction of GH₵ 200.00",
+                    reason = "Emergency vehicle repair and commute allowance",
+                    requestedDate = "15 Jul 2026",
+                    status = "APPROVED",
+                    decisionNote = "Approved by Proprietor Office. Deductions start in August payroll."
+                )
+            )
+            dao.insertAllTeacherLoanRequests(initialLoanRequests)
+
+            // Initial Digital Library Resources
+            val initialDigitalResources = listOf(
+                DigitalResource(
+                    id = 1,
+                    title = "JHS 2 Core Mathematics Textbook (NaCCA)",
+                    authorOrPublisher = "Ministry of Education / GES Ghana",
+                    category = "TEXTBOOK",
+                    resourceType = "BOOK",
+                    targetClass = "JHS 2 - Gold",
+                    subject = "Mathematics",
+                    fileUrlOrPath = "storage/library/jhs2_math_core.pdf",
+                    fileSizeBytes = 5400000L,
+                    fileFormat = "PDF",
+                    uploadedBy = "Proprietor",
+                    uploadDateString = "2026-07-25",
+                    targetAudience = "ALL",
+                    description = "Official NaCCA aligned Mathematics textbook covering Algebra, Geometry & Statistics for JHS 2."
+                ),
+                DigitalResource(
+                    id = 2,
+                    title = "Integrated Science Lab Manual & Syllabus",
+                    authorOrPublisher = "Ghana Science Teachers Association",
+                    category = "SYLLABUS",
+                    resourceType = "DOCUMENT",
+                    targetClass = "JHS 2 - Gold",
+                    subject = "Integrated Science",
+                    fileUrlOrPath = "storage/library/science_lab_manual.pdf",
+                    fileSizeBytes = 3200000L,
+                    fileFormat = "PDF",
+                    uploadedBy = "Proprietor",
+                    uploadDateString = "2026-07-20",
+                    targetAudience = "ALL",
+                    description = "Practical experiment guides and syllabus for physical and biological science topics."
+                ),
+                DigitalResource(
+                    id = 3,
+                    title = "St. Talafor Academy Founding History & Silver Jubilee Book",
+                    authorOrPublisher = "Proprietor's Board of Trustees",
+                    category = "SCHOOL_HISTORY",
+                    resourceType = "DOCUMENT",
+                    targetClass = "ALL",
+                    subject = "ALL",
+                    fileUrlOrPath = "storage/library/school_history_charter.pdf",
+                    fileSizeBytes = 8900000L,
+                    fileFormat = "PDF",
+                    uploadedBy = "Proprietor",
+                    uploadDateString = "2026-07-01",
+                    targetAudience = "ALL",
+                    description = "Historical founding document and 25-year milestone archive of St. Talafor Academy."
+                ),
+                DigitalResource(
+                    id = 4,
+                    title = "25th Anniversary Campus Documentary & Science Lab Tour",
+                    authorOrPublisher = "School Media Committee",
+                    category = "PROMOTIONAL_VIDEO",
+                    resourceType = "VIDEO",
+                    targetClass = "ALL",
+                    subject = "ALL",
+                    fileUrlOrPath = "storage/media/anniversary_tour.mp4",
+                    fileSizeBytes = 45000000L,
+                    fileFormat = "MP4",
+                    uploadedBy = "Proprietor",
+                    uploadDateString = "2026-07-15",
+                    targetAudience = "ALL",
+                    description = "High definition promotional video showcasing campus facilities, ICT labs, and sporting activities."
+                ),
+                DigitalResource(
+                    id = 5,
+                    title = "Primary 4 English Language Reader",
+                    authorOrPublisher = "Ghana Publishing Corporation",
+                    category = "TEXTBOOK",
+                    resourceType = "BOOK",
+                    targetClass = "Primary 4",
+                    subject = "English Language",
+                    fileUrlOrPath = "storage/library/p4_english_reader.epub",
+                    fileSizeBytes = 2800000L,
+                    fileFormat = "EPUB",
+                    uploadedBy = "Proprietor",
+                    uploadDateString = "2026-07-18",
+                    targetAudience = "ALL",
+                    description = "Reading comprehension and vocabulary builder for Primary 4 students."
+                ),
+                DigitalResource(
+                    id = 6,
+                    title = "JHS 1-3 Social Studies Curriculum Framework",
+                    authorOrPublisher = "NaCCA Ghana",
+                    category = "CURRICULUM",
+                    resourceType = "DOCUMENT",
+                    targetClass = "JHS 1",
+                    subject = "Social Studies",
+                    fileUrlOrPath = "storage/library/social_studies_curriculum.pdf",
+                    fileSizeBytes = 1900000L,
+                    fileFormat = "PDF",
+                    uploadedBy = "Proprietor",
+                    uploadDateString = "2026-07-10",
+                    targetAudience = "TEACHERS_ONLY",
+                    description = "Master teacher guide and scheme of work for JHS Social Studies curriculum."
+                )
+            )
+            dao.insertAllDigitalResources(initialDigitalResources)
+
+            // Initial Class Assignments
+            val initialAssignments = listOf(
+                ClassAssignment(
+                    id = 1,
+                    title = "Algebra & Linear Equations Worksheet 4",
+                    description = "Solve questions 1 through 15 on page 84 of the Core Math textbook. Show all working steps clearly.",
+                    className = "JHS 2 - Gold",
+                    subject = "Mathematics",
+                    teacherId = 1,
+                    teacherName = "Mr. Kojo Mensah",
+                    assignedDateString = "2026-07-28",
+                    dueDateString = "2026-08-02",
+                    attachmentPathOrUrl = "storage/assignments/jhs2_math_algebra_ws4.pdf",
+                    maxScore = 50,
+                    frequencyPeriod = "WEEKLY",
+                    termLabel = "Term 3 2026"
+                ),
+                ClassAssignment(
+                    id = 2,
+                    title = "Solar Energy & Circuit Model Lab Project",
+                    description = "Build a working 3V electric circuit model using DC motor and solar cells. Submit a 2-page lab report with circuit diagrams.",
+                    className = "JHS 2 - Gold",
+                    subject = "Integrated Science",
+                    teacherId = 1,
+                    teacherName = "Mr. Kojo Mensah",
+                    assignedDateString = "2026-07-25",
+                    dueDateString = "2026-08-08",
+                    attachmentPathOrUrl = "storage/assignments/jhs2_science_project_guide.pdf",
+                    maxScore = 100,
+                    frequencyPeriod = "WEEKLY",
+                    termLabel = "Term 3 2026"
+                ),
+                ClassAssignment(
+                    id = 3,
+                    title = "Daily Mental Math Speed Drill #12",
+                    description = "Complete 20 speed calculation items in 15 minutes before morning registration.",
+                    className = "JHS 2 - Gold",
+                    subject = "Mathematics",
+                    teacherId = 1,
+                    teacherName = "Mr. Kojo Mensah",
+                    assignedDateString = "2026-07-29",
+                    dueDateString = "2026-07-30",
+                    attachmentPathOrUrl = "storage/assignments/daily_math_drill_12.pdf",
+                    maxScore = 20,
+                    frequencyPeriod = "DAILY",
+                    termLabel = "Term 3 2026"
+                ),
+                ClassAssignment(
+                    id = 4,
+                    title = "Term 3 History & Governance Research Project",
+                    description = "3-page typed or written essay detailing the 1957 independence movement and founding leaders of Ghana.",
+                    className = "JHS 2 - Gold",
+                    subject = "Social Studies",
+                    teacherId = 4,
+                    teacherName = "Miss Akosua Addo",
+                    assignedDateString = "2026-07-10",
+                    dueDateString = "2026-08-20",
+                    attachmentPathOrUrl = "storage/assignments/social_studies_termly_essay.pdf",
+                    maxScore = 100,
+                    frequencyPeriod = "TERMLY",
+                    termLabel = "Term 3 2026"
+                ),
+                ClassAssignment(
+                    id = 5,
+                    title = "Punctuation & Sentence Construction Exercise",
+                    description = "Complete workbook pages 12 to 14. Focus on proper use of commas, quotation marks, and semicolons.",
+                    className = "Primary 4",
+                    subject = "English Language",
+                    teacherId = 2,
+                    teacherName = "Mrs. Abena Osei",
+                    assignedDateString = "2026-07-29",
+                    dueDateString = "2026-07-31",
+                    attachmentPathOrUrl = "storage/assignments/p4_english_exercise.pdf",
+                    maxScore = 30,
+                    frequencyPeriod = "WEEKLY",
+                    termLabel = "Term 3 2026"
+                )
+            )
+            dao.insertAllClassAssignments(initialAssignments)
 
             // Initial Accounts for instant demo setup
             val accounts = listOf(

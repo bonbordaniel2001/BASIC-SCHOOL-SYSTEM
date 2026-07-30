@@ -23,14 +23,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AttendanceRecord
+import com.example.data.model.ClassAssignment
 import com.example.data.model.ClassTimetable
 import com.example.data.model.ClockInLog
 import com.example.data.model.DailyStudentAttendance
+import com.example.data.model.DigitalResource
 import com.example.data.model.LessonPlan
 import com.example.data.model.StudentGrade
 import com.example.ui.components.ClassGpaTrendOverviewCard
 import com.example.ui.components.GpaSparklineCanvas
 import com.example.ui.components.GpaTrendBadge
+import com.example.ui.components.LoadingOverlay
+import com.example.ui.components.LoadingSpinner
 import com.example.ui.theme.GhanaEmeraldGreen
 import com.example.ui.theme.GhanaGoldAccent
 import com.example.ui.theme.GhanaGreenContainer
@@ -89,8 +93,43 @@ fun TeacherScreen(
     val studentLedgers by viewModel.allStudentLedgers.collectAsState()
     val allLessonPlans by viewModel.allLessonPlans.collectAsState()
     val allTimetables by viewModel.allTimetables.collectAsState()
+    val allTeacherLoanRequests by viewModel.allTeacherLoanRequests.collectAsState()
+    val allDirectMessages by viewModel.allDirectMessages.collectAsState()
+    val allDigitalResources by viewModel.allDigitalResources.collectAsState()
+    val allClassAssignments by viewModel.allClassAssignments.collectAsState()
+    val uiLoadingState by viewModel.uiLoadingState.collectAsState()
+    val loadingMessage by viewModel.loadingMessage.collectAsState()
 
-    var activeTeacherTab by remember { mutableStateOf(0) } // 0: Attendance Register, 1: Gradebook & Marks Entry, 2: Daily Lesson Plans, 3: Weekly Class Timetable
+    var activeTeacherTab by remember { mutableStateOf(0) } // 0: Attendance, 1: Gradebook, 2: Lesson Plans, 3: Timetable, 4: Loan Request, 5: Parent Messaging, 6: Pay Receipts, 7: Digital Library, 8: Class Assignments
+
+    // Teacher Digital Library & Assignment Upload States
+    val teacherAssignedClass = "JHS 2 - Gold"
+    val teacherAssignedSubject = "Mathematics"
+    var teacherLibCategoryFilter by remember { mutableStateOf("ALL") }
+
+    var showUploadAssignmentDialog by remember { mutableStateOf(false) }
+    var assignmentTitleInput by remember { mutableStateOf("") }
+    var assignmentDescInput by remember { mutableStateOf("") }
+    var assignmentClassInput by remember { mutableStateOf("JHS 2 - Gold") }
+    var assignmentSubjectInput by remember { mutableStateOf("Mathematics") }
+    var assignmentDueDateInput by remember { mutableStateOf("2026-08-05") }
+    var assignmentPeriodInput by remember { mutableStateOf("WEEKLY") } // "DAILY", "WEEKLY", "TERMLY"
+    var assignmentMaxScoreInput by remember { mutableStateOf("100") }
+
+    // Teacher Loan Request State (Feature 1)
+    var inputLoanAmount by remember { mutableStateOf("1200.0") }
+    var inputLoanDurationMonths by remember { mutableStateOf("6") }
+    var inputLoanTerms by remember { mutableStateOf("Monthly salary deduction of GH₵ 200.00") }
+    var inputLoanReason by remember { mutableStateOf("Emergency medical and dependent school fees advance") }
+
+    // Direct Messaging State (Feature 5)
+    var inputMessageRecipient by remember { mutableStateOf("Mrs. Grace Mensah") }
+    var inputMessageChildName by remember { mutableStateOf("Ama Serwaa Mensah") }
+    var inputMessageSubject by remember { mutableStateOf("BECE Mathematics Homework & Prep") }
+    var inputMessageBody by remember { mutableStateOf("Good day Mrs. Mensah, Ama is performing exceptionally well in algebra. Please ensure she continues daily practice.") }
+
+    // Digital Pay Receipt State (Feature 4)
+    var showDigitalPayReceiptDialog by remember { mutableStateOf(false) }
     var timetableClassFilter by remember { mutableStateOf("JHS 2 - Gold") }
     var timetableDayFilter by remember { mutableStateOf("ALL") }
 
@@ -1126,12 +1165,13 @@ fun TeacherScreen(
             }
         }
 
-        // --- TOP TAB ROW FOR TEACHER (Attendance vs Gradebook vs Lesson Plans) ---
+        // --- TOP TAB ROW FOR TEACHER ---
         item {
-            TabRow(
+            ScrollableTabRow(
                 selectedTabIndex = activeTeacherTab,
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 contentColor = MaterialTheme.colorScheme.primary,
+                edgePadding = 8.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
@@ -1163,6 +1203,41 @@ fun TeacherScreen(
                     text = { Text("Timetable", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
                     icon = { Icon(Icons.Default.CalendarMonth, contentDescription = null) },
                     modifier = Modifier.testTag("teacher_tab_timetable")
+                )
+                Tab(
+                    selected = activeTeacherTab == 4,
+                    onClick = { activeTeacherTab = 4 },
+                    text = { Text("Loan Request", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.MonetizationOn, contentDescription = null) },
+                    modifier = Modifier.testTag("teacher_tab_loan_request")
+                )
+                Tab(
+                    selected = activeTeacherTab == 5,
+                    onClick = { activeTeacherTab = 5 },
+                    text = { Text("Parent Messages", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.QuestionAnswer, contentDescription = null) },
+                    modifier = Modifier.testTag("teacher_tab_parent_messages")
+                )
+                Tab(
+                    selected = activeTeacherTab == 6,
+                    onClick = { activeTeacherTab = 6 },
+                    text = { Text("Pay Receipts", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.ReceiptLong, contentDescription = null) },
+                    modifier = Modifier.testTag("teacher_tab_pay_receipts")
+                )
+                Tab(
+                    selected = activeTeacherTab == 7,
+                    onClick = { activeTeacherTab = 7 },
+                    text = { Text("Digital Library", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.MenuBook, contentDescription = null) },
+                    modifier = Modifier.testTag("teacher_tab_digital_library")
+                )
+                Tab(
+                    selected = activeTeacherTab == 8,
+                    onClick = { activeTeacherTab = 8 },
+                    text = { Text("Assignments", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Assignment, contentDescription = null) },
+                    modifier = Modifier.testTag("teacher_tab_assignments")
                 )
             }
         }
@@ -2773,6 +2848,855 @@ fun TeacherScreen(
                 }
             }
         }
+
+        if (activeTeacherTab == 4) {
+            // ==========================================
+            // FEATURE 1: TEACHER LOAN REQUEST PORTAL
+            // ==========================================
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("teacher_loan_request_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.MonetizationOn, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Teacher Salary Loan Request", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Submit salary advance or loan application for Proprietor approval", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                        OutlinedTextField(
+                            value = inputLoanAmount,
+                            onValueChange = { inputLoanAmount = it },
+                            label = { Text("Loan Amount requested (GH₵)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("input_loan_amount_field")
+                        )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(
+                                value = inputLoanDurationMonths,
+                                onValueChange = { inputLoanDurationMonths = it },
+                                label = { Text("Repayment Duration (Months)") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f).testTag("input_loan_duration_field")
+                            )
+
+                            OutlinedTextField(
+                                value = inputLoanTerms,
+                                onValueChange = { inputLoanTerms = it },
+                                label = { Text("Repayment Terms") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1.5f).testTag("input_loan_terms_field")
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = inputLoanReason,
+                            onValueChange = { inputLoanReason = it },
+                            label = { Text("Reason / Justification for Loan") },
+                            minLines = 2,
+                            modifier = Modifier.fillMaxWidth().testTag("input_loan_reason_field")
+                        )
+
+                        Button(
+                            onClick = {
+                                val amt = inputLoanAmount.toDoubleOrNull() ?: 1000.0
+                                val duration = inputLoanDurationMonths.toIntOrNull() ?: 6
+                                viewModel.submitTeacherLoanRequest(
+                                    teacherId = 1,
+                                    teacherName = "Mr. Kojo Mensah",
+                                    amountGhc = amt,
+                                    durationMonths = duration,
+                                    terms = inputLoanTerms,
+                                    reason = inputLoanReason
+                                )
+                                inputLoanReason = ""
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("submit_teacher_loan_button")
+                        ) {
+                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Submit Salary Loan Application", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "📋 Submitted Salary Loan Requests History",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = GhanaNavyPrimary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                )
+            }
+
+            if (allTeacherLoanRequests.isEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "No loan requests submitted yet.",
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(20.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                items(allTeacherLoanRequests) { req ->
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("teacher_loan_req_item_${req.id}")
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("GH₵ ${String.format("%.2f", req.amountGhc)}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Text("${req.repaymentDurationMonths} Months", fontSize = 11.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                    }
+                                }
+
+                                val (badgeBg, badgeText, textColor) = when (req.status) {
+                                    "APPROVED" -> Triple(Color(0xFFD1E7DD), "APPROVED", Color(0xFF0F5132))
+                                    "REJECTED" -> Triple(Color(0xFFF8D7DA), "DECLINED", Color(0xFF842029))
+                                    else -> Triple(Color(0xFFFFF3CD), "PENDING APPROVAL", Color(0xFF664D03))
+                                }
+
+                                Surface(shape = RoundedCornerShape(8.dp), color = badgeBg) {
+                                    Text(badgeText, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = textColor, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Terms: ${req.repaymentTerms}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Reason: ${req.reason}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Requested Date: ${req.requestedDate}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+
+                            if (req.decisionNote.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("💬 Proprietor Note: ${req.decisionNote}", fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(8.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (activeTeacherTab == 5) {
+            // ==========================================
+            // FEATURE 5: GUARDIAN-TEACHER COMMUNICATION
+            // ==========================================
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("teacher_parent_msg_composer_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.QuestionAnswer, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Guardian Direct Messaging", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Communicate directly with student guardians regarding academic progress", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(
+                                value = inputMessageRecipient,
+                                onValueChange = { inputMessageRecipient = it },
+                                label = { Text("Guardian Name") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f).testTag("msg_recipient_field")
+                            )
+                            OutlinedTextField(
+                                value = inputMessageChildName,
+                                onValueChange = { inputMessageChildName = it },
+                                label = { Text("Student/Child") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f).testTag("msg_child_name_field")
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = inputMessageSubject,
+                            onValueChange = { inputMessageSubject = it },
+                            label = { Text("Subject") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("msg_subject_field")
+                        )
+
+                        OutlinedTextField(
+                            value = inputMessageBody,
+                            onValueChange = { inputMessageBody = it },
+                            label = { Text("Message Body") },
+                            minLines = 3,
+                            modifier = Modifier.fillMaxWidth().testTag("msg_body_field")
+                        )
+
+                        Button(
+                            onClick = {
+                                viewModel.sendDirectMessage(
+                                    senderName = "Mr. Kojo Mensah (Class Teacher)",
+                                    senderRole = "TEACHER",
+                                    recipientName = inputMessageRecipient,
+                                    recipientRole = "GUARDIAN",
+                                    childName = inputMessageChildName,
+                                    subject = inputMessageSubject,
+                                    messageBody = inputMessageBody
+                                )
+                                inputMessageBody = ""
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("send_direct_message_button")
+                        ) {
+                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Send Direct Message to Guardian", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "💬 Message Conversation History",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = GhanaNavyPrimary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                )
+            }
+
+            if (allDirectMessages.isEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = "No messages yet.", fontSize = 13.sp, modifier = Modifier.padding(20.dp))
+                    }
+                }
+            } else {
+                items(allDirectMessages) { msg ->
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("direct_msg_item_${msg.id}")
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("From: ${msg.senderName}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (msg.senderRole == "TEACHER") GhanaNavyPrimary.copy(alpha = 0.1f) else GhanaEmeraldGreen.copy(alpha = 0.15f)
+                                    ) {
+                                        Text(msg.senderRole, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                    }
+                                }
+                                Text(msg.timestampString, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("To: ${msg.recipientName}  |  Re: Student ${msg.childName}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            Text("Subject: ${msg.subject}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(msg.messageBody, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (activeTeacherTab == 6) {
+            // ==========================================
+            // FEATURE 4: TEACHER PAY RECEIPT GENERATION
+            // ==========================================
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("teacher_pay_receipt_overview_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Teacher Monthly Pay Receipt", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Official monthly salary breakdown & printable digital receipt", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = GhanaNavyPrimary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text("Staff Code: AK-T01  |  Mr. Kojo Mensah", color = GhanaGoldAccent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Base Monthly Salary: GH₵ 2,800.00", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                Text("Payment Method: MTN MoMo / Direct Bank Transfer", color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp)
+                            }
+                        }
+
+                        Button(
+                            onClick = { showDigitalPayReceiptDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = GhanaGoldAccent),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("view_digital_pay_receipt_button")
+                        ) {
+                            Icon(Icons.Default.Receipt, contentDescription = null, tint = GhanaNavyPrimary)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Generate & Export Digital Pay Receipt", fontWeight = FontWeight.Bold, color = GhanaNavyPrimary)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (activeTeacherTab == 7) {
+            // ==========================================
+            // FEATURE: TEACHER DIGITAL LIBRARY & RBAC RESOURCES
+            // ==========================================
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("teacher_digital_library_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.MenuBook, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Digital Library & Resources", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Granular Access Control • Class & Subject Textbooks", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                        // Granular RBAC Notification Banner
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = GhanaGoldAccent.copy(alpha = 0.18f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = GhanaNavyPrimary, modifier = Modifier.size(18.dp))
+                                Column {
+                                    Text("🔒 Granular Role-Based Access Enforced", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GhanaNavyPrimary)
+                                    Text("Access granted for $teacherAssignedClass & $teacherAssignedSubject resources + School-wide history & syllabi.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+
+                        // Category Filter Chips
+                        val categories = listOf("ALL", "TEXTBOOK", "SYLLABUS", "CURRICULUM", "SCHOOL_HISTORY", "PROMOTIONAL_VIDEO")
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            categories.forEach { cat ->
+                                FilterChip(
+                                    selected = teacherLibCategoryFilter == cat,
+                                    onClick = { teacherLibCategoryFilter = cat },
+                                    label = { Text(cat.replace("_", " "), fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = GhanaNavyPrimary,
+                                        selectedLabelColor = Color.White
+                                    ),
+                                    modifier = Modifier.testTag("teacher_lib_filter_${cat}")
+                                )
+                            }
+                        }
+
+                        val teacherAccessibleResources = allDigitalResources.filter { res ->
+                            val classMatch = res.targetClass == "ALL" || res.targetClass == teacherAssignedClass
+                            val subjectMatch = res.subject == "ALL" || res.subject == teacherAssignedSubject
+                            val categoryMatch = res.category in listOf("SCHOOL_HISTORY", "PROMOTIONAL_VIDEO", "SCHOOL_MEDIA", "SYLLABUS", "CURRICULUM")
+                            (classMatch && subjectMatch) || categoryMatch
+                        }.filter { res ->
+                            teacherLibCategoryFilter == "ALL" || res.category == teacherLibCategoryFilter
+                        }
+
+                        if (teacherAccessibleResources.isEmpty()) {
+                            Text("No textbooks or resources match your assigned class/subject filter.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                teacherAccessibleResources.forEach { res ->
+                                    Card(
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                        modifier = Modifier.fillMaxWidth().testTag("teacher_resource_item_${res.id}")
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(res.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text("Publisher: ${res.authorOrPublisher} • Format: ${res.fileFormat}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.triggerPortalDataRefresh("Downloading '${res.title}' (${res.fileFormat})...")
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                    modifier = Modifier.testTag("download_resource_${res.id}")
+                                                ) {
+                                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Download", fontSize = 11.sp)
+                                                }
+                                            }
+
+                                            if (res.description.isNotBlank()) {
+                                                Text(res.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                                            }
+
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaGoldAccent.copy(alpha = 0.2f)) {
+                                                    Text("Category: ${res.category.replace("_", " ")}", fontSize = 9.sp, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaEmeraldGreen.copy(alpha = 0.15f)) {
+                                                    Text("Class: ${res.targetClass}", fontSize = 9.sp, color = Color(0xFF0F5132), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaNavyPrimary.copy(alpha = 0.1f)) {
+                                                    Text("Subject: ${res.subject}", fontSize = 9.sp, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (activeTeacherTab == 8) {
+            // ==========================================
+            // FEATURE: TEACHER CLASS ASSIGNMENTS UPLOAD & TRACKING
+            // ==========================================
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("teacher_assignments_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Assignment, contentDescription = null, tint = GhanaNavyPrimary)
+                                }
+                                Column {
+                                    Text("Class Assignments Upload", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                    Text("Create, upload & assign homework for your class", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+
+                            Button(
+                                onClick = { showUploadAssignmentDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("open_upload_assignment_dialog_button")
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("New Task", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                        val myClassAssignments = allClassAssignments.filter { ass ->
+                            ass.className == teacherAssignedClass || ass.subject == teacherAssignedSubject
+                        }
+
+                        if (myClassAssignments.isEmpty()) {
+                            Text("No assignments currently posted for $teacherAssignedClass.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                myClassAssignments.forEach { ass ->
+                                    Card(
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                        modifier = Modifier.fillMaxWidth().testTag("teacher_assignment_item_${ass.id}")
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(ass.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text("Class: ${ass.className} • Subject: ${ass.subject}", fontSize = 11.sp, color = GhanaNavyPrimary, fontWeight = FontWeight.SemiBold)
+                                                }
+
+                                                IconButton(
+                                                    onClick = { viewModel.deleteClassAssignment(ass.id) },
+                                                    modifier = Modifier.size(28.dp).testTag("delete_assignment_teacher_${ass.id}")
+                                                ) {
+                                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                                }
+                                            }
+
+                                            Text(ass.description, fontSize = 11.sp)
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaGoldAccent.copy(alpha = 0.25f)) {
+                                                    Text("Frequency: ${ass.frequencyPeriod}", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaNavyPrimary.copy(alpha = 0.1f)) {
+                                                    Text("Due: ${ass.dueDateString}", fontSize = 9.sp, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                                Surface(shape = RoundedCornerShape(4.dp), color = GhanaEmeraldGreen.copy(alpha = 0.15f)) {
+                                                    Text("Max Score: ${ass.maxScore} pts", fontSize = 9.sp, color = Color(0xFF0F5132), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- DIALOG: TEACHER UPLOAD ASSIGNMENT ---
+    if (showUploadAssignmentDialog) {
+        AlertDialog(
+            onDismissRequest = { showUploadAssignmentDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Assignment, contentDescription = null, tint = GhanaNavyPrimary)
+                    Column {
+                        Text("Post Class Assignment", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("Dispatch homework / project to students & guardians", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = assignmentTitleInput,
+                        onValueChange = { assignmentTitleInput = it },
+                        label = { Text("Assignment Title") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("assignment_title_input")
+                    )
+
+                    OutlinedTextField(
+                        value = assignmentDescInput,
+                        onValueChange = { assignmentDescInput = it },
+                        label = { Text("Instructions & Homework Details") },
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth().testTag("assignment_desc_input")
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = assignmentClassInput,
+                            onValueChange = { assignmentClassInput = it },
+                            label = { Text("Class") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("assignment_class_input")
+                        )
+                        OutlinedTextField(
+                            value = assignmentSubjectInput,
+                            onValueChange = { assignmentSubjectInput = it },
+                            label = { Text("Subject") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("assignment_subject_input")
+                        )
+                    }
+
+                    Column {
+                        Text("Frequency Period:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("DAILY", "WEEKLY", "TERMLY").forEach { period ->
+                                FilterChip(
+                                    selected = assignmentPeriodInput == period,
+                                    onClick = { assignmentPeriodInput = period },
+                                    label = { Text(period, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                                )
+                            }
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = assignmentDueDateInput,
+                            onValueChange = { assignmentDueDateInput = it },
+                            label = { Text("Due Date (YYYY-MM-DD)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("assignment_duedate_input")
+                        )
+                        OutlinedTextField(
+                            value = assignmentMaxScoreInput,
+                            onValueChange = { assignmentMaxScoreInput = it },
+                            label = { Text("Max Score") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("assignment_maxscore_input")
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (assignmentTitleInput.isNotBlank() && assignmentDescInput.isNotBlank()) {
+                            viewModel.uploadClassAssignment(
+                                title = assignmentTitleInput,
+                                description = assignmentDescInput,
+                                className = assignmentClassInput,
+                                subject = assignmentSubjectInput,
+                                dueDateString = assignmentDueDateInput,
+                                frequencyPeriod = assignmentPeriodInput,
+                                maxScore = assignmentMaxScoreInput.toIntOrNull() ?: 100
+                            )
+                            showUploadAssignmentDialog = false
+                            assignmentTitleInput = ""
+                            assignmentDescInput = ""
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                    modifier = Modifier.testTag("submit_upload_assignment_button")
+                ) {
+                    Text("Post Assignment")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUploadAssignmentDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showDigitalPayReceiptDialog) {
+        AlertDialog(
+            onDismissRequest = { showDigitalPayReceiptDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = GhanaNavyPrimary)
+                    Column {
+                        Text("Official Staff Pay Advice", fontWeight = FontWeight.Bold, color = GhanaNavyPrimary, fontSize = 16.sp)
+                        Text("Akoma Academy Payroll Office", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("Receipt No: RCP-PAY-2026-07-001", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Date Disbursed: 28 Jul 2026", fontSize = 11.sp)
+                            Text("Employee: Mr. Kojo Mensah (Senior Lead Teacher)", fontSize = 11.sp)
+                        }
+                    }
+
+                    HorizontalDivider()
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Base Monthly Salary:", fontSize = 12.sp)
+                        Text("GH₵ 2,800.00", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("BECE Prep & ICT Allowance:", fontSize = 12.sp)
+                        Text("+ GH₵ 250.00", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GhanaEmeraldGreen)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Gross Payable:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("GH₵ 3,050.00", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+
+                    HorizontalDivider()
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("SSNIT Tier-1 Pension (5.5%):", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("- GH₵ 154.00", fontSize = 11.sp, color = Color.Red)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("PAYE Tax Withholding:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("- GH₵ 210.00", fontSize = 11.sp, color = Color.Red)
+                    }
+
+                    HorizontalDivider()
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = GhanaNavyPrimary,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("NET SALARY PAID:", color = GhanaGoldAccent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("GH₵ 2,686.00", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        android.widget.Toast.makeText(viewModel.context, "Pay receipt exported & sent to print preview!", android.widget.Toast.LENGTH_LONG).show()
+                        showDigitalPayReceiptDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary)
+                ) {
+                    Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Print / Export Receipt")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDigitalPayReceiptDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
     }
 
     if (showScheduleSlotDialog) {

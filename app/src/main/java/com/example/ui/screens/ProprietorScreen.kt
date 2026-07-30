@@ -23,14 +23,21 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.ClassAssignment
 import com.example.data.model.ClassTimetable
+import com.example.data.model.ClockInLog
+import com.example.data.model.DigitalResource
+import com.example.data.model.DirectMessage
 import com.example.data.model.LessonPlan
 import com.example.data.model.MessageLog
 import com.example.data.model.StaffMember
 import com.example.data.model.StudentFeePayment
 import com.example.data.model.StudentGrade
 import com.example.data.model.StudentLedger
+import com.example.data.model.TeacherLoanRequest
 import com.example.data.model.TransactionApproval
+import com.example.ui.components.LoadingOverlay
+import com.example.ui.components.LoadingSpinner
 import com.example.ui.components.RoleDelegationDialog
 import com.example.ui.theme.GhanaEmeraldGreen
 import com.example.ui.theme.GhanaGoldAccent
@@ -59,6 +66,42 @@ fun ProprietorScreen(
     val allFeePayments by viewModel.allFeePayments.collectAsState()
     val allFeeTransactions by viewModel.allFeeTransactions.collectAsState()
     val allTimetables by viewModel.allTimetables.collectAsState()
+    val allTeacherLoanRequests by viewModel.allTeacherLoanRequests.collectAsState()
+    val allDirectMessages by viewModel.allDirectMessages.collectAsState()
+    val schoolSettings by viewModel.schoolSettings.collectAsState()
+    val staffClockIns by viewModel.allClockInLogs.collectAsState()
+    val allDigitalResources by viewModel.allDigitalResources.collectAsState()
+    val allClassAssignments by viewModel.allClassAssignments.collectAsState()
+    val uiLoadingState by viewModel.uiLoadingState.collectAsState()
+    val loadingMessage by viewModel.loadingMessage.collectAsState()
+
+    // Digital Library & Media Upload State
+    var showUploadResourceDialog by remember { mutableStateOf(false) }
+    var resourceTitleInput by remember { mutableStateOf("") }
+    var resourceAuthorInput by remember { mutableStateOf("Ministry of Education / GES") }
+    var resourceCategoryInput by remember { mutableStateOf("TEXTBOOK") }
+    var resourceTypeInput by remember { mutableStateOf("DOCUMENT") }
+    var resourceTargetClassInput by remember { mutableStateOf("JHS 2 - Gold") }
+    var resourceSubjectInput by remember { mutableStateOf("Mathematics") }
+    var resourceAudienceInput by remember { mutableStateOf("ALL") }
+    var resourceDescriptionInput by remember { mutableStateOf("") }
+    var resourceFileFormatInput by remember { mutableStateOf("PDF") }
+    var libraryCategoryFilter by remember { mutableStateOf("ALL") }
+    var librarySearchQuery by remember { mutableStateOf("") }
+
+    // Assignment Tracking Oversight State
+    var assignmentPeriodFilter by remember { mutableStateOf("ALL") } // "ALL", "DAILY", "WEEKLY", "TERMLY"
+    var assignmentTeacherFilter by remember { mutableStateOf("ALL") }
+
+    // Proprietor Broadcast Dispatcher State
+    var broadcastTitleInput by remember { mutableStateOf("") }
+    var broadcastBodyInput by remember { mutableStateOf("") }
+    var broadcastAudienceInput by remember { mutableStateOf("ALL") }
+
+    // Loan Decision State
+    var selectedLoanForDecision by remember { mutableStateOf<TeacherLoanRequest?>(null) }
+    var loanDecisionNoteInput by remember { mutableStateOf("") }
+    var showLoanDecisionDialog by remember { mutableStateOf(false) }
 
     // School-Wide Master Timetable State
     var proprietorTimetableClassFilter by remember { mutableStateOf("ALL") }
@@ -803,6 +846,11 @@ fun ProprietorScreen(
         val targetSalary = adjustSalaryAmountInput.toDoubleOrNull() ?: currentSalary
         val diff = targetSalary - currentSalary
 
+        val newSalParsed = adjustSalaryAmountInput.toDoubleOrNull()
+        val isValidIncrease = isSalaryIncreaseMode && newSalParsed != null && newSalParsed > currentSalary
+        val isValidReduction = !isSalaryIncreaseMode && newSalParsed != null && newSalParsed < currentSalary
+        val isSalaryConstraintValid = isValidIncrease || isValidReduction
+
         AlertDialog(
             onDismissRequest = { showAdjustSalaryDialog = false },
             title = {
@@ -863,6 +911,16 @@ fun ProprietorScreen(
                         onValueChange = { adjustSalaryAmountInput = it },
                         label = { Text(if (isSalaryIncreaseMode) "New Higher Salary (GH₵)" else "New Lower Salary (GH₵)") },
                         singleLine = true,
+                        isError = newSalParsed != null && !isSalaryConstraintValid,
+                        supportingText = {
+                            if (newSalParsed != null && !isSalaryConstraintValid) {
+                                Text(
+                                    text = if (isSalaryIncreaseMode) "Validation Rule: New salary must be strictly greater than current salary (GH₵ ${String.format("%.2f", currentSalary)})." else "Validation Rule: New salary must be strictly less than current salary (GH₵ ${String.format("%.2f", currentSalary)}).",
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth().testTag("adjust_salary_amount_input")
                     )
 
@@ -881,14 +939,19 @@ fun ProprietorScreen(
                     onClick = {
                         val newSal = adjustSalaryAmountInput.toDoubleOrNull()
                         if (newSal != null) {
-                            if (isSalaryIncreaseMode) {
-                                viewModel.increaseStaffSalary(staff.id, newSal, adjustSalaryReasonInput)
-                            } else {
-                                viewModel.reduceStaffSalary(staff.id, newSal, adjustSalaryReasonInput)
+                            try {
+                                if (isSalaryIncreaseMode) {
+                                    viewModel.increaseStaffSalary(staff.id, newSal, adjustSalaryReasonInput)
+                                } else {
+                                    viewModel.reduceStaffSalary(staff.id, newSal, adjustSalaryReasonInput)
+                                }
+                                showAdjustSalaryDialog = false
+                            } catch (e: Exception) {
+                                android.widget.Toast.makeText(viewModel.context, e.message ?: "Invalid salary adjustment", android.widget.Toast.LENGTH_LONG).show()
                             }
-                            showAdjustSalaryDialog = false
                         }
                     },
+                    enabled = isSalaryConstraintValid,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isSalaryIncreaseMode) GhanaEmeraldGreen else MaterialTheme.colorScheme.error
                     ),
@@ -2993,12 +3056,860 @@ fun ProprietorScreen(
             }
         }
 
-        // --- SECTION 3: SMS / WHATSAPP MESSAGING PANEL ---
+        // --- SECTION 3: TEACHER SALARY LOAN REQUEST APPROVAL QUEUE ---
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth().testTag("proprietor_loan_approval_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.MonetizationOn, contentDescription = null, tint = GhanaNavyPrimary)
+                        }
+                        Column {
+                            Text("Teacher Salary Loan Approvals", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                            Text("Review, approve or decline staff salary advance requests", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                    if (allTeacherLoanRequests.isEmpty()) {
+                        Text("No staff salary loan requests pending approval.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            allTeacherLoanRequests.forEach { req ->
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                    modifier = Modifier.fillMaxWidth().testTag("loan_req_approval_item_${req.id}")
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(req.teacherName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                Text("Requested: GH₵ ${String.format("%.2f", req.amountGhc)}  •  Duration: ${req.repaymentDurationMonths} Months", fontSize = 12.sp, color = GhanaNavyPrimary, fontWeight = FontWeight.SemiBold)
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = when (req.status) {
+                                                    "APPROVED" -> Color(0xFFD1E7DD)
+                                                    "REJECTED" -> Color(0xFFF8D7DA)
+                                                    else -> Color(0xFFFFF3CD)
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = req.status,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = when (req.status) {
+                                                        "APPROVED" -> Color(0xFF0F5132)
+                                                        "REJECTED" -> Color(0xFF842029)
+                                                        else -> Color(0xFF664D03)
+                                                    },
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("Terms: ${req.repaymentTerms}", fontSize = 11.sp)
+                                        Text("Reason: ${req.reason}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                                        if (req.status == "PENDING") {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.approveTeacherLoanRequest(req.id, "Approved by Proprietor")
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = GhanaEmeraldGreen),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    modifier = Modifier.weight(1f).testTag("approve_loan_button_${req.id}")
+                                                ) {
+                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Approve Loan", fontSize = 11.sp)
+                                                }
+
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        viewModel.rejectTeacherLoanRequest(req.id, "Declined due to budget constraints")
+                                                    },
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    modifier = Modifier.weight(1f).testTag("reject_loan_button_${req.id}")
+                                                ) {
+                                                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Red)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Decline", fontSize = 11.sp, color = Color.Red)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- SECTION 4: PROPRIETOR STAFF CLOCK-IN & LATENESS TRACKING DASHBOARD ---
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth().testTag("proprietor_clockin_tracking_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Schedule, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Staff Clock-In & Lateness Tracking", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Official Morning Threshold: ${schoolSettings?.officialStartTime ?: "08:00 AM"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = GhanaNavyPrimary.copy(alpha = 0.1f)
+                        ) {
+                            Text(
+                                "Threshold: ${schoolSettings?.officialStartTime ?: "08:00 AM"}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GhanaNavyPrimary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                    if (staffClockIns.isEmpty()) {
+                        Text("No staff clock-in logs recorded today.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            staffClockIns.forEach { clockIn ->
+                                Card(
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                    modifier = Modifier.fillMaxWidth().testTag("clockin_log_${clockIn.id}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(clockIn.teacherName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                            Text("Timestamp: ${clockIn.timestampString}  •  ${clockIn.actionType}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (clockIn.isWithinGeofence) Color(0xFFD1E7DD) else Color(0xFFFFF3CD)
+                                        ) {
+                                            Text(
+                                                text = if (clockIn.isWithinGeofence) "✅ GEOFENCE VERIFIED" else "📍 REMOTE LOG",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (clockIn.isWithinGeofence) Color(0xFF0F5132) else Color(0xFF664D03),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- SECTION 5: GUARDIAN-TEACHER COMMUNICATIONS MONITOR (READ-ONLY OVERSIGHT) ---
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth().testTag("proprietor_messages_oversight_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Visibility, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Guardian-Teacher Communications", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Read-Only proprietor oversight & monitoring portal", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Surface(shape = RoundedCornerShape(6.dp), color = GhanaGoldAccent) {
+                            Text("READ-ONLY", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                    if (allDirectMessages.isEmpty()) {
+                        Text("No direct messages exchanged yet.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            allDirectMessages.take(5).forEach { msg ->
+                                Card(
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text("${msg.senderName} ➔ ${msg.recipientName}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text(msg.timestampString, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        Text("Re Student: ${msg.childName}  |  Subject: ${msg.subject}", fontSize = 10.sp, color = GhanaNavyPrimary, fontWeight = FontWeight.SemiBold)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(msg.messageBody, fontSize = 11.sp, maxLines = 2, color = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- SECTION 6: PROPRIETOR BROADCAST NOTIFICATION SYSTEM ---
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth().testTag("proprietor_broadcast_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(GhanaGoldAccent, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Campaign, contentDescription = null, tint = GhanaNavyPrimary)
+                        }
+                        Column {
+                            Text("Proprietor School-Wide Broadcast", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                            Text("Dispatch urgent alerts & announcements to staff and guardians", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("ALL" to "All Community", "TEACHERS" to "Teachers Only", "GUARDIANS" to "Guardians Only").forEach { (aud, label) ->
+                            FilterChip(
+                                selected = broadcastAudienceInput == aud,
+                                onClick = { broadcastAudienceInput = aud },
+                                label = { Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                modifier = Modifier.height(28.dp).testTag("broadcast_aud_$aud")
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = broadcastTitleInput,
+                        onValueChange = { broadcastTitleInput = it },
+                        label = { Text("Announcement Title / Subject") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("broadcast_title_field")
+                    )
+
+                    OutlinedTextField(
+                        value = broadcastBodyInput,
+                        onValueChange = { broadcastBodyInput = it },
+                        label = { Text("Announcement Message Body") },
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth().testTag("broadcast_body_field")
+                    )
+
+                    Button(
+                        onClick = {
+                            if (broadcastTitleInput.isNotBlank() && broadcastBodyInput.isNotBlank()) {
+                                viewModel.dispatchProprietorBroadcast(
+                                    title = broadcastTitleInput,
+                                    messageText = broadcastBodyInput,
+                                    targetRole = broadcastAudienceInput
+                                )
+                                broadcastTitleInput = ""
+                                broadcastBodyInput = ""
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("dispatch_broadcast_button")
+                    ) {
+                        Icon(Icons.Default.Campaign, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Dispatch School-Wide Broadcast", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // --- SECTION 7: SMS / WHATSAPP MESSAGING PANEL ---
         item {
             MessagingPanel(viewModel = viewModel)
         }
+
+        // --- SECTION 8: DIGITAL LIBRARY & SCHOOL HISTORY REPOSITORY MANAGER ---
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth().testTag("proprietor_digital_library_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.MenuBook, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Digital Library & History Repository", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Manage textbooks, syllabi, history docs & videos", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Button(
+                            onClick = { showUploadResourceDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("open_upload_resource_dialog_button")
+                        ) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Upload", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                    // Category Filter Chips
+                    val categories = listOf("ALL", "TEXTBOOK", "SYLLABUS", "CURRICULUM", "SCHOOL_HISTORY", "PROMOTIONAL_VIDEO")
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(categories) { cat ->
+                            FilterChip(
+                                selected = libraryCategoryFilter == cat,
+                                onClick = { libraryCategoryFilter = cat },
+                                label = { Text(cat.replace("_", " "), fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = GhanaNavyPrimary,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.testTag("prop_lib_filter_${cat}")
+                            )
+                        }
+                    }
+
+                    val filteredResources = allDigitalResources.filter { res ->
+                        (libraryCategoryFilter == "ALL" || res.category == libraryCategoryFilter) &&
+                        (librarySearchQuery.isBlank() || res.title.contains(librarySearchQuery, ignoreCase = true) || res.subject.contains(librarySearchQuery, ignoreCase = true))
+                    }
+
+                    if (filteredResources.isEmpty()) {
+                        Text("No digital resources match the selected filter.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            filteredResources.forEach { res ->
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                    modifier = Modifier.fillMaxWidth().testTag("digital_res_item_${res.id}")
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = when (res.fileFormat) {
+                                                        "PDF" -> Color(0xFFF8D7DA)
+                                                        "EPUB" -> Color(0xFFD1E7DD)
+                                                        "MP4" -> Color(0xFFCFE2FF)
+                                                        else -> Color(0xFFFFF3CD)
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        res.fileFormat,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = when (res.fileFormat) {
+                                                            "PDF" -> Color(0xFF842029)
+                                                            "EPUB" -> Color(0xFF0F5132)
+                                                            "MP4" -> Color(0xFF084298)
+                                                            else -> Color(0xFF664D03)
+                                                        },
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                                Column {
+                                                    Text(res.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text("By: ${res.authorOrPublisher} • ${res.uploadDateString}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+
+                                            IconButton(
+                                                onClick = { viewModel.deleteDigitalResource(res.id) },
+                                                modifier = Modifier.size(28.dp).testTag("delete_digital_res_${res.id}")
+                                            ) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete Resource", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+
+                                        if (res.description.isNotBlank()) {
+                                            Text(res.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                                        }
+
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            BadgeChip(text = "Category: ${res.category.replace("_", " ")}")
+                                            BadgeChip(text = "Class: ${res.targetClass}")
+                                            BadgeChip(text = "Subject: ${res.subject}")
+                                        }
+
+                                        Text("File Storage Path: ${res.fileUrlOrPath} (${res.fileSizeBytes / 1024 / 1024} MB)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- SECTION 9: ASSIGNMENT ACTIVITY & TEACHER COMPLIANCE MONITORING DASHBOARD ---
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth().testTag("proprietor_assignment_monitoring_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Analytics, contentDescription = null, tint = GhanaNavyPrimary)
+                        }
+                        Column {
+                            Text("Assignment Tracking & Teacher Monitoring", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                            Text("Monitor daily, weekly, and termly assignment compliance", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                    // Frequency Period Filters
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("Frequency Period:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        listOf("ALL", "DAILY", "WEEKLY", "TERMLY").forEach { period ->
+                            FilterChip(
+                                selected = assignmentPeriodFilter == period,
+                                onClick = { assignmentPeriodFilter = period },
+                                label = { Text(period, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = GhanaNavyPrimary,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.testTag("assignment_period_filter_${period}")
+                            )
+                        }
+                    }
+
+                    val filteredAssignments = allClassAssignments.filter { ass ->
+                        assignmentPeriodFilter == "ALL" || ass.frequencyPeriod == assignmentPeriodFilter
+                    }
+
+                    // Analytics Stat Cards
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val dailyCount = allClassAssignments.count { it.frequencyPeriod == "DAILY" }
+                        val weeklyCount = allClassAssignments.count { it.frequencyPeriod == "WEEKLY" }
+                        val termlyCount = allClassAssignments.count { it.frequencyPeriod == "TERMLY" }
+
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            colors = CardDefaults.cardColors(containerColor = GhanaNavyPrimary.copy(alpha = 0.08f)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(dailyCount.toString(), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GhanaNavyPrimary)
+                                Text("Daily Drills", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            colors = CardDefaults.cardColors(containerColor = GhanaEmeraldGreen.copy(alpha = 0.12f)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(weeklyCount.toString(), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GhanaEmeraldGreen)
+                                Text("Weekly Homework", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            colors = CardDefaults.cardColors(containerColor = GhanaGoldAccent.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(termlyCount.toString(), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GhanaNavyPrimary)
+                                Text("Termly Projects", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    // Teacher Compliance Summary
+                    Text("Teacher Assignment Posting Compliance:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GhanaNavyPrimary)
+                    val teacherList = listOf("Mr. Kojo Mensah", "Mrs. Abena Osei", "Miss Akosua Addo")
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        teacherList.forEach { teacher ->
+                            val tAssignments = filteredAssignments.filter { it.teacherName == teacher }
+                            val count = tAssignments.size
+                            val isCompliant = count > 0
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(teacher, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text("${count} assignments posted in period (${assignmentPeriodFilter})", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (isCompliant) Color(0xFFD1E7DD) else Color(0xFFFFF3CD)
+                                    ) {
+                                        Text(
+                                            text = if (isCompliant) "✅ ACTIVE ASSIGNER" else "⚠️ ATTENTION NEEDED",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isCompliant) Color(0xFF0F5132) else Color(0xFF664D03),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Detailed Assignment Feed
+                    Text("School Assignment Log Feed:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GhanaNavyPrimary)
+                    if (filteredAssignments.isEmpty()) {
+                        Text("No assignments recorded for this period filter.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            filteredAssignments.forEach { ass ->
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                    modifier = Modifier.fillMaxWidth().testTag("prop_assignment_item_${ass.id}")
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(ass.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                Text("Teacher: ${ass.teacherName} • Class: ${ass.className} (${ass.subject})", fontSize = 11.sp, color = GhanaNavyPrimary, fontWeight = FontWeight.SemiBold)
+                                            }
+                                            IconButton(
+                                                onClick = { viewModel.deleteClassAssignment(ass.id) },
+                                                modifier = Modifier.size(28.dp).testTag("delete_assignment_${ass.id}")
+                                            ) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+
+                                        Text(ass.description, fontSize = 11.sp)
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            BadgeChip(text = "Period: ${ass.frequencyPeriod}")
+                                            BadgeChip(text = "Due: ${ass.dueDateString}")
+                                            BadgeChip(text = "Max Score: ${ass.maxScore} pts")
+                                        }
+                                        Text("Attachment: ${ass.attachmentPathOrUrl}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- DIALOG: UPLOAD DIGITAL RESOURCE ---
+    if (showUploadResourceDialog) {
+        AlertDialog(
+            onDismissRequest = { showUploadResourceDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = null, tint = GhanaNavyPrimary)
+                    Column {
+                        Text("Upload Resource & Media", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("Textbooks, Syllabi, Media & School History", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = resourceTitleInput,
+                        onValueChange = { resourceTitleInput = it },
+                        label = { Text("Resource Title / Book Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("resource_title_input")
+                    )
+
+                    OutlinedTextField(
+                        value = resourceAuthorInput,
+                        onValueChange = { resourceAuthorInput = it },
+                        label = { Text("Author / Publisher") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("resource_author_input")
+                    )
+
+                    Column {
+                        Text("Category:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        val catList = listOf("TEXTBOOK", "SYLLABUS", "CURRICULUM", "REFERENCE", "SCHOOL_HISTORY", "PROMOTIONAL_VIDEO", "SCHOOL_MEDIA")
+                        ScrollableTabRow(
+                            selectedTabIndex = catList.indexOf(resourceCategoryInput).coerceAtLeast(0),
+                            edgePadding = 0.dp
+                        ) {
+                            catList.forEach { cat ->
+                                Tab(
+                                    selected = resourceCategoryInput == cat,
+                                    onClick = { resourceCategoryInput = cat }
+                                ) {
+                                    Text(cat.replace("_", " "), fontSize = 10.sp, modifier = Modifier.padding(vertical = 4.dp, horizontal = 6.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    Column {
+                        Text("Target Class:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        val clsList = listOf("ALL", "JHS 1", "JHS 2 - Gold", "JHS 3", "Primary 4", "Primary 5", "Primary 6")
+                        ScrollableTabRow(
+                            selectedTabIndex = clsList.indexOf(resourceTargetClassInput).coerceAtLeast(0),
+                            edgePadding = 0.dp
+                        ) {
+                            clsList.forEach { cls ->
+                                Tab(
+                                    selected = resourceTargetClassInput == cls,
+                                    onClick = { resourceTargetClassInput = cls }
+                                ) {
+                                    Text(cls, fontSize = 10.sp, modifier = Modifier.padding(vertical = 4.dp, horizontal = 6.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    Column {
+                        Text("Subject:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        val subList = listOf("ALL", "Mathematics", "Integrated Science", "English Language", "Social Studies", "ICT")
+                        ScrollableTabRow(
+                            selectedTabIndex = subList.indexOf(resourceSubjectInput).coerceAtLeast(0),
+                            edgePadding = 0.dp
+                        ) {
+                            subList.forEach { sub ->
+                                Tab(
+                                    selected = resourceSubjectInput == sub,
+                                    onClick = { resourceSubjectInput = sub }
+                                ) {
+                                    Text(sub, fontSize = 10.sp, modifier = Modifier.padding(vertical = 4.dp, horizontal = 6.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    Column {
+                        Text("File Format:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("PDF", "EPUB", "MP4", "PNG").forEach { fmt ->
+                                FilterChip(
+                                    selected = resourceFileFormatInput == fmt,
+                                    onClick = { resourceFileFormatInput = fmt },
+                                    label = { Text(fmt, fontSize = 10.sp) }
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = resourceDescriptionInput,
+                        onValueChange = { resourceDescriptionInput = it },
+                        label = { Text("Resource Description & Notes") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth().testTag("resource_description_input")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (resourceTitleInput.isNotBlank()) {
+                            viewModel.uploadDigitalResource(
+                                title = resourceTitleInput,
+                                authorOrPublisher = resourceAuthorInput,
+                                category = resourceCategoryInput,
+                                resourceType = if (resourceFileFormatInput in listOf("MP4", "PNG")) "MEDIA" else "DOCUMENT",
+                                targetClass = resourceTargetClassInput,
+                                subject = resourceSubjectInput,
+                                targetAudience = resourceAudienceInput,
+                                description = resourceDescriptionInput,
+                                fileFormat = resourceFileFormatInput
+                            )
+                            showUploadResourceDialog = false
+                            resourceTitleInput = ""
+                            resourceDescriptionInput = ""
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                    modifier = Modifier.testTag("submit_upload_resource_button")
+                ) {
+                    Text("Upload Resource")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUploadResourceDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
+
 
 @Composable
 private fun BadgeChip(text: String) {

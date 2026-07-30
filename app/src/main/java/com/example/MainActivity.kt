@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.example.ui.components.AuthDialog
+import com.example.ui.components.LoadingOverlay
 import com.example.ui.components.NotificationCenterSheet
 import com.example.ui.components.RoleSelectorBar
 import com.example.ui.screens.GuardianScreen
@@ -45,6 +46,8 @@ class MainActivity : ComponentActivity() {
                 val unreadCount by viewModel.unreadNotificationCount.collectAsState()
                 val showAuthDialog by viewModel.showAuthDialog.collectAsState()
                 val showNotificationCenter by viewModel.showNotificationCenter.collectAsState()
+                val uiLoadingState by viewModel.uiLoadingState.collectAsState()
+                val loadingMessage by viewModel.loadingMessage.collectAsState()
 
                 if (showAuthDialog) {
                     AuthDialog(
@@ -118,6 +121,11 @@ class MainActivity : ComponentActivity() {
                                 ViewMode.CALENDAR -> SchoolCalendarScreen(viewModel = viewModel)
                             }
                         }
+
+                        LoadingOverlay(
+                            isLoading = uiLoadingState,
+                            message = loadingMessage
+                        )
                     }
                 }
             }

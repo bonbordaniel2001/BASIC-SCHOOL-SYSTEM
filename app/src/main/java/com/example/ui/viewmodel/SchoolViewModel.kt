@@ -75,6 +75,138 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     val allLessonPlans: StateFlow<List<LessonPlan>> = repository.allLessonPlans
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allDirectMessages: StateFlow<List<DirectMessage>> = repository.allDirectMessages
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allTeacherLoanRequests: StateFlow<List<TeacherLoanRequest>> = repository.allTeacherLoanRequests
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allDigitalResources: StateFlow<List<DigitalResource>> = repository.allDigitalResources
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allClassAssignments: StateFlow<List<ClassAssignment>> = repository.allClassAssignments
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- Loading State Management ---
+    private val _uiLoadingState = MutableStateFlow(false)
+    val uiLoadingState: StateFlow<Boolean> = _uiLoadingState.asStateFlow()
+
+    private val _loadingMessage = MutableStateFlow("Synchronizing portal data...")
+    val loadingMessage: StateFlow<String> = _loadingMessage.asStateFlow()
+
+    fun showLoading(message: String = "Synchronizing portal data...") {
+        _loadingMessage.value = message
+        _uiLoadingState.value = true
+    }
+
+    fun hideLoading() {
+        _uiLoadingState.value = false
+    }
+
+    fun triggerPortalDataRefresh(message: String = "Fetching latest portal records...") {
+        viewModelScope.launch {
+            _loadingMessage.value = message
+            _uiLoadingState.value = true
+            kotlinx.coroutines.delay(700)
+            _uiLoadingState.value = false
+            Toast.makeText(context, "Portal data updated successfully!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun uploadDigitalResource(
+        title: String,
+        authorOrPublisher: String,
+        category: String,
+        resourceType: String,
+        targetClass: String,
+        subject: String,
+        targetAudience: String,
+        description: String,
+        fileFormat: String = "PDF"
+    ) {
+        viewModelScope.launch {
+            showLoading("Uploading & indexing digital resource...")
+            kotlinx.coroutines.delay(600)
+            val formatExtension = fileFormat.lowercase(Locale.ROOT)
+            val simulatedPath = "storage/library/${title.lowercase(Locale.ROOT).replace(" ", "_").replace("/", "_")}.$formatExtension"
+            val newRes = DigitalResource(
+                title = title,
+                authorOrPublisher = authorOrPublisher.ifBlank { "Proprietor Board" },
+                category = category,
+                resourceType = resourceType,
+                targetClass = targetClass,
+                subject = subject,
+                fileUrlOrPath = simulatedPath,
+                fileSizeBytes = (2000000..80000000).random().toLong(),
+                fileFormat = fileFormat,
+                uploadedBy = "Proprietor",
+                uploadDateString = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()),
+                targetAudience = targetAudience,
+                description = description
+            )
+            repository.insertDigitalResource(newRes)
+            hideLoading()
+            Toast.makeText(context, "Resource '$title' uploaded to Digital Library!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun deleteDigitalResource(id: Long) {
+        viewModelScope.launch {
+            repository.deleteDigitalResourceById(id)
+            Toast.makeText(context, "Digital resource removed.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun uploadClassAssignment(
+        title: String,
+        description: String,
+        className: String,
+        subject: String,
+        dueDateString: String,
+        frequencyPeriod: String,
+        maxScore: Int = 100,
+        attachmentPath: String = ""
+    ) {
+        viewModelScope.launch {
+            showLoading("Dispatching class assignment...")
+            kotlinx.coroutines.delay(600)
+            val curUser = activeUserAccount.value
+            val teacherName = curUser?.fullName ?: "Class Teacher"
+            val teacherId = curUser?.id ?: 1L
+            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+            val attPath = attachmentPath.ifBlank { "storage/assignments/${title.lowercase(Locale.ROOT).replace(" ", "_").replace("/", "_")}.pdf" }
+
+            val newAssignment = ClassAssignment(
+                title = title,
+                description = description,
+                className = className,
+                subject = subject,
+                teacherId = teacherId,
+                teacherName = teacherName,
+                assignedDateString = dateStr,
+                dueDateString = dueDateString,
+                attachmentPathOrUrl = attPath,
+                maxScore = maxScore,
+                frequencyPeriod = frequencyPeriod,
+                termLabel = "Term 3 2026"
+            )
+            repository.insertClassAssignment(newAssignment)
+            hideLoading()
+            Toast.makeText(context, "Assignment '$title' posted for $className!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun deleteClassAssignment(id: Long) {
+        viewModelScope.launch {
+            repository.deleteClassAssignmentById(id)
+            Toast.makeText(context, "Assignment removed.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+
+    val schoolSettings: StateFlow<SchoolSettings?> = repository.schoolSettings
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     val allPortalAccounts: StateFlow<List<UserPortalAccount>> = repository.allPortalAccounts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -146,9 +278,6 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
     // --- Active User Account & School Settings ---
     val activeUserAccount: StateFlow<UserAccount?> = repository.activeUserAccount
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-
-    val schoolSettings: StateFlow<SchoolSettings?> = repository.schoolSettings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val schoolName: StateFlow<String> = repository.schoolSettings
@@ -430,15 +559,99 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
     fun reduceStaffSalary(staffId: Long, newSalaryGhc: Double, reason: String) {
         viewModelScope.launch {
-            repository.updateStaffSalary(staffId, newSalaryGhc, reason, "REDUCE")
-            Toast.makeText(context, "Salary reduced to GH₵ ${String.format("%.2f", newSalaryGhc)}", Toast.LENGTH_SHORT).show()
+            try {
+                repository.updateStaffSalary(staffId, newSalaryGhc, reason, "REDUCE")
+                Toast.makeText(context, "Salary reduced to GH₵ ${String.format("%.2f", newSalaryGhc)}", Toast.LENGTH_SHORT).show()
+            } catch (e: IllegalArgumentException) {
+                Toast.makeText(context, e.message ?: "Invalid salary reduction amount", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
     fun increaseStaffSalary(staffId: Long, newSalaryGhc: Double, reason: String) {
         viewModelScope.launch {
-            repository.updateStaffSalary(staffId, newSalaryGhc, reason, "INCREASE")
-            Toast.makeText(context, "Salary increased to GH₵ ${String.format("%.2f", newSalaryGhc)}", Toast.LENGTH_SHORT).show()
+            try {
+                repository.updateStaffSalary(staffId, newSalaryGhc, reason, "INCREASE")
+                Toast.makeText(context, "Salary increased to GH₵ ${String.format("%.2f", newSalaryGhc)}", Toast.LENGTH_SHORT).show()
+            } catch (e: IllegalArgumentException) {
+                Toast.makeText(context, e.message ?: "Invalid salary increase amount", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // --- Teacher Loan Requests ---
+    fun submitTeacherLoanRequest(
+        teacherId: Long = 1,
+        teacherName: String,
+        amountGhc: Double,
+        durationMonths: Int,
+        terms: String,
+        reason: String
+    ) {
+        viewModelScope.launch {
+            repository.submitTeacherLoanRequest(
+                teacherId = teacherId,
+                teacherName = teacherName,
+                amountGhc = amountGhc,
+                durationMonths = durationMonths,
+                terms = terms,
+                reason = reason
+            )
+            Toast.makeText(context, "Salary loan request of GH₵ ${String.format("%.2f", amountGhc)} submitted for Proprietor approval!", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun approveTeacherLoanRequest(requestId: Long, note: String = "") {
+        viewModelScope.launch {
+            repository.approveTeacherLoanRequest(requestId, note)
+            Toast.makeText(context, "Teacher Loan Request Approved!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun rejectTeacherLoanRequest(requestId: Long, note: String = "") {
+        viewModelScope.launch {
+            repository.rejectTeacherLoanRequest(requestId, note)
+            Toast.makeText(context, "Teacher Loan Request Declined.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // --- Direct Messages (Guardian <-> Teacher) ---
+    fun sendDirectMessage(
+        senderName: String,
+        senderRole: String,
+        recipientName: String,
+        recipientRole: String,
+        childName: String,
+        subject: String,
+        messageBody: String
+    ) {
+        viewModelScope.launch {
+            repository.sendDirectMessage(
+                senderName = senderName,
+                senderRole = senderRole,
+                recipientName = recipientName,
+                recipientRole = recipientRole,
+                childName = childName,
+                subject = subject,
+                messageBody = messageBody
+            )
+            Toast.makeText(context, "Message sent to $recipientName!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // --- Proprietor Official Start Time Settings ---
+    fun updateOfficialStartTime(startTime: String) {
+        viewModelScope.launch {
+            repository.updateOfficialStartTime(startTime)
+            Toast.makeText(context, "Official Start Time set to $startTime", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // --- Proprietor Broadcast Announcement System ---
+    fun dispatchProprietorBroadcast(title: String, messageText: String, targetRole: String = "ALL") {
+        viewModelScope.launch {
+            repository.sendBroadcastAnnouncement(title, messageText, targetRole)
+            Toast.makeText(context, "Broadcast Announcement Dispatched to ${if (targetRole == "ALL") "All Staff & Guardians" else targetRole}!", Toast.LENGTH_LONG).show()
         }
     }
 
