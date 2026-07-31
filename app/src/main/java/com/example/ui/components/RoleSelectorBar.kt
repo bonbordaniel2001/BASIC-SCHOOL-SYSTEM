@@ -246,6 +246,15 @@ fun RoleSelectorBar(
                     testTag = "tab_calendar",
                     modifier = Modifier.weight(1f)
                 )
+
+                ModeTabButton(
+                    title = "Alumni",
+                    icon = Icons.Default.Groups,
+                    isSelected = currentMode == ViewMode.ALUMNI,
+                    onClick = { onModeSelected(ViewMode.ALUMNI) },
+                    testTag = "tab_alumni",
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }

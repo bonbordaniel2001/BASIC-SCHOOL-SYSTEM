@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.database.SchoolDatabase
 import com.example.data.model.*
+import com.example.data.repository.AlumniRepository
 import com.example.data.repository.GuardianRepository
 import com.example.data.repository.SchoolRepository
 import com.example.data.repository.StudentRepository
@@ -25,7 +26,8 @@ enum class ViewMode {
     PROPRIETOR,
     TEACHER,
     GUARDIAN,
-    CALENDAR
+    CALENDAR,
+    ALUMNI
 }
 
 enum class SimulatedGeofenceState {
@@ -39,6 +41,7 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     val studentRepository: StudentRepository
     val teacherRepository: TeacherRepository
     val guardianRepository: GuardianRepository
+    val alumniRepository: AlumniRepository
     val context: Context = application.applicationContext
 
     init {
@@ -58,8 +61,10 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         studentRepository = StudentRepository(db.studentDao())
         teacherRepository = TeacherRepository(db.teacherDao())
         guardianRepository = GuardianRepository(db.guardianDao())
+        alumniRepository = AlumniRepository(db.alumniDao())
         viewModelScope.launch {
             repository.seedInitialDataIfEmpty()
+            alumniRepository.seedInitialAlumniDataIfEmpty()
         }
     }
 
@@ -85,6 +90,28 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allClassAssignments: StateFlow<List<ClassAssignment>> = repository.allClassAssignments
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- Alumni Network StateFlows ---
+    val allAlumniProfiles: StateFlow<List<AlumniProfile>> = alumniRepository.allAlumniProfiles
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val activatedAlumniProfiles: StateFlow<List<AlumniProfile>> = alumniRepository.activatedAlumniProfiles
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val activeAlumniAdmin: StateFlow<AlumniProfile?> = alumniRepository.activeAlumniAdmin
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val allAlumniChatMessages: StateFlow<List<AlumniChatMessage>> = alumniRepository.allAlumniChatMessages
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allCallSessions: StateFlow<List<AlumniCallSession>> = alumniRepository.allCallSessions
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allPerformanceMetrics: StateFlow<List<SchoolPerformanceMetric>> = alumniRepository.allPerformanceMetrics
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allAspirants: StateFlow<List<AlumniAspirant>> = alumniRepository.allAspirants
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // --- Loading State Management ---
@@ -122,24 +149,26 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         subject: String,
         targetAudience: String,
         description: String,
-        fileFormat: String = "PDF"
+        fileFormat: String = "PDF",
+        fileUrlOrPath: String? = null,
+        uploadedBy: String = "Proprietor"
     ) {
         viewModelScope.launch {
             showLoading("Uploading & indexing digital resource...")
             kotlinx.coroutines.delay(600)
             val formatExtension = fileFormat.lowercase(Locale.ROOT)
-            val simulatedPath = "storage/library/${title.lowercase(Locale.ROOT).replace(" ", "_").replace("/", "_")}.$formatExtension"
+            val finalPath = if (!fileUrlOrPath.isNullOrBlank()) fileUrlOrPath else "storage/library/${title.lowercase(Locale.ROOT).replace(" ", "_").replace("/", "_")}.$formatExtension"
             val newRes = DigitalResource(
                 title = title,
-                authorOrPublisher = authorOrPublisher.ifBlank { "Proprietor Board" },
+                authorOrPublisher = authorOrPublisher.ifBlank { uploadedBy },
                 category = category,
                 resourceType = resourceType,
                 targetClass = targetClass,
                 subject = subject,
-                fileUrlOrPath = simulatedPath,
+                fileUrlOrPath = finalPath,
                 fileSizeBytes = (2000000..80000000).random().toLong(),
                 fileFormat = fileFormat,
-                uploadedBy = "Proprietor",
+                uploadedBy = uploadedBy,
                 uploadDateString = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()),
                 targetAudience = targetAudience,
                 description = description
@@ -1484,6 +1513,130 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
                 message = "Your lesson plan for '$topic' was $statusLabel by Management. Feedback: $feedback"
             )
             Toast.makeText(context, "Lesson plan status updated to $newStatus", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // --- ALUMNI PLATFORM ACTIONS ---
+    fun verifyAndActivateAlumniAccount(
+        name: String,
+        studentId: String,
+        dob: String,
+        guardianName: String,
+        phone: String,
+        email: String,
+        onSuccess: (AlumniProfile) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val activated = alumniRepository.verifyAndActivateAccount(
+                name = name,
+                studentId = studentId,
+                dob = dob,
+                guardianName = guardianName,
+                phone = phone,
+                email = email
+            )
+            if (activated != null) {
+                Toast.makeText(context, "Account Verified & Unlocked! Welcome, ${activated.fullName}", Toast.LENGTH_LONG).show()
+                onSuccess(activated)
+            } else {
+                val errorMsg = "Verification Failed: Credentials do not match official school records (Name, ID, DOB, Guardian)."
+                Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                onError(errorMsg)
+            }
+        }
+    }
+
+    fun rotateAnnualAlumniAdmin(newAdminId: Long, termYear: String = "2026 Yearly Admin") {
+        viewModelScope.launch {
+            alumniRepository.rotateAnnualAdmin(newAdminId, termYear)
+            Toast.makeText(context, "Annual Alumni Admin rotated successfully!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun sendAlumniChatMessage(
+        senderName: String,
+        senderRole: String,
+        text: String,
+        mediaType: String = "TEXT",
+        mediaUrl: String = "",
+        fileName: String = ""
+    ) {
+        viewModelScope.launch {
+            alumniRepository.sendChatMessage(
+                senderName = senderName,
+                senderRole = senderRole,
+                messageText = text,
+                mediaType = mediaType,
+                mediaUrl = mediaUrl,
+                fileName = fileName
+            )
+        }
+    }
+
+    fun initiateProprietorConsultationCall(
+        initiator: AlumniProfile,
+        callType: String = "AUDIO_CONSULTATION",
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                alumniRepository.initiateCallSession(initiator, callType)
+                Toast.makeText(context, "Call initiated with School Proprietor...", Toast.LENGTH_SHORT).show()
+                onSuccess()
+            } catch (e: SecurityException) {
+                val msg = e.message ?: "Access Denied: Only the Alumni Admin can initiate direct consultations with the Proprietor."
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                onError(msg)
+            }
+        }
+    }
+
+    fun batchImportAlumni(profiles: List<AlumniProfile>) {
+        viewModelScope.launch {
+            alumniRepository.batchImportAlumni(profiles)
+            Toast.makeText(context, "Imported ${profiles.size} historical alumni records successfully!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun submitAspirantIntent(
+        user: AlumniProfile,
+        manifesto: String,
+        termYear: String = "2027",
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                alumniRepository.submitAspirantIntent(user, manifesto, termYear)
+                Toast.makeText(context, "Aspirant intent submitted for $termYear Admin position!", Toast.LENGTH_LONG).show()
+                onSuccess()
+            } catch (e: Exception) {
+                val msg = e.message ?: "Failed to submit aspirant intent."
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                onError(msg)
+            }
+        }
+    }
+
+    fun castVoteForAspirant(
+        voter: AlumniProfile,
+        candidateDocId: String,
+        termYear: String = "2027",
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                alumniRepository.castVoteForAspirant(voter, candidateDocId, termYear)
+                Toast.makeText(context, "Vote successfully recorded! Thank you for voting.", Toast.LENGTH_LONG).show()
+                onSuccess()
+            } catch (e: Exception) {
+                val msg = e.message ?: "Failed to record vote."
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                onError(msg)
+            }
         }
     }
 }

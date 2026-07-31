@@ -35,6 +35,7 @@ import com.example.ui.components.GpaSparklineCanvas
 import com.example.ui.components.GpaTrendBadge
 import com.example.ui.components.LoadingOverlay
 import com.example.ui.components.LoadingSpinner
+import com.example.ui.components.UploadResourceDialog
 import com.example.ui.theme.GhanaEmeraldGreen
 import com.example.ui.theme.GhanaGoldAccent
 import com.example.ui.theme.GhanaGreenContainer
@@ -106,6 +107,7 @@ fun TeacherScreen(
     val teacherAssignedClass = "JHS 2 - Gold"
     val teacherAssignedSubject = "Mathematics"
     var teacherLibCategoryFilter by remember { mutableStateOf("ALL") }
+    var showUploadResourceDialog by remember { mutableStateOf(false) }
 
     var showUploadAssignmentDialog by remember { mutableStateOf(false) }
     var assignmentTitleInput by remember { mutableStateOf("") }
@@ -3254,20 +3256,39 @@ fun TeacherScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Icon(Icons.Default.MenuBook, contentDescription = null, tint = GhanaNavyPrimary)
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.MenuBook, contentDescription = null, tint = GhanaNavyPrimary)
+                                }
+                                Column {
+                                    Text("Digital Library & Resources", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                    Text("Granular Access Control • Class & Subject Textbooks", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
-                            Column {
-                                Text("Digital Library & Resources", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
-                                Text("Granular Access Control • Class & Subject Textbooks", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                            FilledIconButton(
+                                onClick = { showUploadResourceDialog = true },
+                                colors = IconButtonDefaults.filledIconButtonColors(containerColor = GhanaNavyPrimary),
+                                modifier = Modifier.size(40.dp).testTag("teacher_open_upload_resource_plus_button")
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = "Upload Digital Resource",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
                             }
                         }
 
@@ -3489,6 +3510,29 @@ fun TeacherScreen(
                 }
             }
         }
+    }
+
+    // --- DIALOG: TEACHER UPLOAD DIGITAL RESOURCE ---
+    if (showUploadResourceDialog) {
+        UploadResourceDialog(
+            userRole = "Teacher",
+            onDismiss = { showUploadResourceDialog = false },
+            onUpload = { title, author, category, type, targetClass, subject, audience, desc, format, urlOrPath, role ->
+                viewModel.uploadDigitalResource(
+                    title = title,
+                    authorOrPublisher = author,
+                    category = category,
+                    resourceType = type,
+                    targetClass = targetClass,
+                    subject = subject,
+                    targetAudience = audience,
+                    description = desc,
+                    fileFormat = format,
+                    fileUrlOrPath = urlOrPath,
+                    uploadedBy = "Teacher ($teacherAssignedSubject)"
+                )
+            }
+        )
     }
 
     // --- DIALOG: TEACHER UPLOAD ASSIGNMENT ---

@@ -12,6 +12,7 @@ import com.example.data.dao.LessonPlanDao
 import com.example.data.dao.PortalUserDao
 import com.example.data.dao.SchoolDao
 import com.example.data.dao.SchoolEventDao
+import com.example.data.dao.AlumniDao
 import com.example.data.dao.StudentDao
 import com.example.data.dao.TeacherDao
 import com.example.data.dao.TimetableDao
@@ -43,9 +44,16 @@ import com.example.data.model.*
         DirectMessage::class,
         TeacherLoanRequest::class,
         DigitalResource::class,
-        ClassAssignment::class
+        ClassAssignment::class,
+        AlumniProfile::class,
+        AlumniChatMessage::class,
+        AlumniCallSession::class,
+        SchoolPerformanceMetric::class,
+        YearlyAdminRegistryEntry::class,
+        AlumniAspirant::class,
+        AdminVote::class
     ],
-    version = 19,
+    version = 22,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -61,6 +69,7 @@ abstract class SchoolDatabase : RoomDatabase() {
     abstract fun timetableDao(): TimetableDao
     abstract fun attendanceDao(): AttendanceDao
     abstract fun lessonPlanDao(): LessonPlanDao
+    abstract fun alumniDao(): AlumniDao
 
     companion object {
         @Volatile

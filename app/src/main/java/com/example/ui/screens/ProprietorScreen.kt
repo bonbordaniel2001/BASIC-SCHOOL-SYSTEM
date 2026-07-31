@@ -34,11 +34,16 @@ import com.example.data.model.StaffMember
 import com.example.data.model.StudentFeePayment
 import com.example.data.model.StudentGrade
 import com.example.data.model.StudentLedger
+import com.example.data.model.StudentProfile
 import com.example.data.model.TeacherLoanRequest
 import com.example.data.model.TransactionApproval
 import com.example.ui.components.LoadingOverlay
 import com.example.ui.components.LoadingSpinner
 import com.example.ui.components.RoleDelegationDialog
+import com.example.ui.components.StudentListViewWithSearch
+import com.example.ui.components.StudentProfileCard
+import com.example.ui.components.StudentProfileDialog
+import com.example.ui.components.UploadResourceDialog
 import com.example.ui.theme.GhanaEmeraldGreen
 import com.example.ui.theme.GhanaGoldAccent
 import com.example.ui.theme.GhanaGoldContainer
@@ -72,8 +77,14 @@ fun ProprietorScreen(
     val staffClockIns by viewModel.allClockInLogs.collectAsState()
     val allDigitalResources by viewModel.allDigitalResources.collectAsState()
     val allClassAssignments by viewModel.allClassAssignments.collectAsState()
+    val allStudentProfiles by viewModel.allStudentProfiles.collectAsState()
     val uiLoadingState by viewModel.uiLoadingState.collectAsState()
     val loadingMessage by viewModel.loadingMessage.collectAsState()
+
+    var selectedStudentProfileForModal by remember { mutableStateOf<StudentProfile?>(null) }
+
+    // Proprietor Portal Navigation Bar Active Tab (0: Overview & Hub, 1: Fee Balances, 2: Staff & Roster, 3: Analytics & CSV, 4: Lesson Plans, 5: Timetable, 6: Loans, 7: Staff Clock-In, 8: Parent Messages, 9: Broadcast & SMS, 10: Digital Library, 11: Assignments, 12: Directory, 13: Roles)
+    var activeProprietorTab by remember { mutableStateOf(0) }
 
     // Digital Library & Media Upload State
     var showUploadResourceDialog by remember { mutableStateOf(false) }
@@ -1313,8 +1324,120 @@ fun ProprietorScreen(
             }
         }
 
+        // --- SECTION: PROPRIETOR TOP NAVIGATION TAB ROW ---
+        item {
+            ScrollableTabRow(
+                selectedTabIndex = activeProprietorTab,
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.primary,
+                edgePadding = 8.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+            ) {
+                Tab(
+                    selected = activeProprietorTab == 0,
+                    onClick = { activeProprietorTab = 0 },
+                    text = { Text("Overview & Hub", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Apps, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_overview")
+                )
+                Tab(
+                    selected = activeProprietorTab == 1,
+                    onClick = { activeProprietorTab = 1 },
+                    text = { Text("Fee Balances", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Payments, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_fees")
+                )
+                Tab(
+                    selected = activeProprietorTab == 2,
+                    onClick = { activeProprietorTab = 2 },
+                    text = { Text("Staff & Roster", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.People, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_staff")
+                )
+                Tab(
+                    selected = activeProprietorTab == 3,
+                    onClick = { activeProprietorTab = 3 },
+                    text = { Text("Analytics & CSV", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_analytics")
+                )
+                Tab(
+                    selected = activeProprietorTab == 4,
+                    onClick = { activeProprietorTab = 4 },
+                    text = { Text("Lesson Plans", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Description, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_lesson_plans")
+                )
+                Tab(
+                    selected = activeProprietorTab == 5,
+                    onClick = { activeProprietorTab = 5 },
+                    text = { Text("Master Timetable", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.CalendarMonth, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_timetable")
+                )
+                Tab(
+                    selected = activeProprietorTab == 6,
+                    onClick = { activeProprietorTab = 6 },
+                    text = { Text("Loan Approvals", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.MonetizationOn, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_loans")
+                )
+                Tab(
+                    selected = activeProprietorTab == 7,
+                    onClick = { activeProprietorTab = 7 },
+                    text = { Text("Staff Clock-In", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.AccessTime, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_clockin")
+                )
+                Tab(
+                    selected = activeProprietorTab == 8,
+                    onClick = { activeProprietorTab = 8 },
+                    text = { Text("Parent Messages", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.QuestionAnswer, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_parent_messages")
+                )
+                Tab(
+                    selected = activeProprietorTab == 9,
+                    onClick = { activeProprietorTab = 9 },
+                    text = { Text("Broadcast & SMS", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Campaign, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_broadcast")
+                )
+                Tab(
+                    selected = activeProprietorTab == 10,
+                    onClick = { activeProprietorTab = 10 },
+                    text = { Text("Digital Library", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.MenuBook, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_digital_library")
+                )
+                Tab(
+                    selected = activeProprietorTab == 11,
+                    onClick = { activeProprietorTab = 11 },
+                    text = { Text("Assignments", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Assignment, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_assignments")
+                )
+                Tab(
+                    selected = activeProprietorTab == 12,
+                    onClick = { activeProprietorTab = 12 },
+                    text = { Text("Student Directory", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.FolderShared, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_directory")
+                )
+                Tab(
+                    selected = activeProprietorTab == 13,
+                    onClick = { activeProprietorTab = 13 },
+                    text = { Text("Roles & System", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.AdminPanelSettings, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_roles")
+                )
+            }
+        }
+
         // --- SECTION 0.5: PENDING USER ACCOUNT REGISTRATION APPROVALS ---
-        if (pendingUserAccounts.isNotEmpty()) {
+        if (pendingUserAccounts.isNotEmpty() && (activeProprietorTab == 0 || activeProprietorTab == 2 || activeProprietorTab == 13)) {
             item {
                 Card(
                     shape = RoundedCornerShape(20.dp),
@@ -1426,7 +1549,8 @@ fun ProprietorScreen(
         }
 
         // --- SECTION: PROPRIETOR GROUPED TASK HUB & DASHBOARD NAVIGATION ---
-        item {
+        if (activeProprietorTab == 0) {
+            item {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1572,9 +1696,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION 1.5: STUDENT FEE PAYMENT & OUTSTANDING BALANCES MONITOR ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 1) {
+            item {
             val totalAssignedFees = allStudentLedgers.sumOf { it.totalFeesGhc }
             val totalCollectedFees = allStudentLedgers.sumOf { it.paidFeesGhc }
             val totalOutstandingBalance = allStudentLedgers.sumOf { it.balanceGhc }
@@ -1843,9 +1969,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION 1: DATA VISUALIZATIONS & ANALYTICS ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 3) {
+            item {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -1872,9 +2000,11 @@ fun ProprietorScreen(
                 )
             }
         }
+    }
 
         // --- SECTION 2: ROLE DELEGATION MATRIX LAUNCHER ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 13) {
+            item {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
@@ -1969,9 +2099,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION: PROPRIETOR STAFF & STUDENT ROSTER MANAGEMENT ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 2) {
+            item {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2383,9 +2515,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION: ACADEMIC PERFORMANCE & GRADE ANALYTICS (PROPRIETOR VIEW) ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 3) {
+            item {
             val totalGradesCount = allGrades.size
             val schoolAvgScore = if (totalGradesCount > 0) allGrades.map { it.totalScore }.average() else 0.0
             val distinctionsCount = allGrades.count { it.gradeLetter == "A1" || it.gradeLetter == "B2" }
@@ -2502,9 +2636,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION 2: TRANSACTION APPROVAL QUEUE ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 1 || activeProprietorTab == 13) {
+            item {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -2578,9 +2714,11 @@ fun ProprietorScreen(
                 )
             }
         }
+    }
 
         // --- SECTION: DAILY LESSON PLANS MANAGEMENT REVIEW ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 4) {
+            item {
             val pendingCount = allLessonPlans.count { it.status == "PENDING_REVIEW" }
             Card(
                 shape = RoundedCornerShape(20.dp),
@@ -2730,9 +2868,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION: SCHOOL-WIDE MASTER TIMETABLE & CLASS SCHEDULES ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 5) {
+            item {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -3055,9 +3195,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION 3: TEACHER SALARY LOAN REQUEST APPROVAL QUEUE ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 6) {
+            item {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -3171,9 +3313,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION 4: PROPRIETOR STAFF CLOCK-IN & LATENESS TRACKING DASHBOARD ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 7) {
+            item {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -3263,9 +3407,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION 5: GUARDIAN-TEACHER COMMUNICATIONS MONITOR (READ-ONLY OVERSIGHT) ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 8) {
+            item {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -3332,9 +3478,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION 6: PROPRIETOR BROADCAST NOTIFICATION SYSTEM ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 9) {
+            item {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -3420,9 +3568,11 @@ fun ProprietorScreen(
         item {
             MessagingPanel(viewModel = viewModel)
         }
+    }
 
         // --- SECTION 8: DIGITAL LIBRARY & SCHOOL HISTORY REPOSITORY MANAGER ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 10) {
+            item {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -3456,16 +3606,17 @@ fun ProprietorScreen(
                             }
                         }
 
-                        Button(
+                        FilledIconButton(
                             onClick = { showUploadResourceDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("open_upload_resource_dialog_button")
+                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = GhanaNavyPrimary),
+                            modifier = Modifier.size(40.dp).testTag("open_upload_resource_plus_button")
                         ) {
-                            Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Upload", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "Upload Digital Resource",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
                         }
                     }
 
@@ -3572,9 +3723,11 @@ fun ProprietorScreen(
                 }
             }
         }
+    }
 
         // --- SECTION 9: ASSIGNMENT ACTIVITY & TEACHER COMPLIANCE MONITORING DASHBOARD ---
-        item {
+        if (activeProprietorTab == 0 || activeProprietorTab == 11) {
+            item {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -3763,148 +3916,109 @@ fun ProprietorScreen(
         }
     }
 
+        // --- SECTION 10: STUDENT PROFILES DIRECTORY & FIRESTORE DATA COMPONENT ---
+        if (activeProprietorTab == 0 || activeProprietorTab == 12) {
+            item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth().testTag("proprietor_student_profiles_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Badge, contentDescription = null, tint = GhanaNavyPrimary)
+                            }
+                            Column {
+                                Text("Student Profiles Directory & Firestore Engine", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GhanaNavyPrimary)
+                                Text("Academic records, guardian contacts & Cloud Firestore schema sync", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = GhanaEmeraldGreen.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = "${allStudentProfiles.size} Students Enrolled",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F5132),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                    StudentListViewWithSearch(
+                        studentList = allStudentProfiles,
+                        onContactGuardianPhone = { phone ->
+                            viewModel.triggerPortalDataRefresh("Initiating call to guardian: $phone")
+                        },
+                        onContactGuardianEmail = { email ->
+                            viewModel.triggerPortalDataRefresh("Opening email compose for guardian: $email")
+                        },
+                        onSyncToFirestore = { student ->
+                            viewModel.triggerPortalDataRefresh("Syncing '${student.fullName}' profile to Cloud Firestore...")
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+    // Modal Student Profile Dialog if clicked
+    selectedStudentProfileForModal?.let { profile ->
+        StudentProfileDialog(
+            student = profile,
+            onDismiss = { selectedStudentProfileForModal = null },
+            onContactGuardianPhone = { phone ->
+                viewModel.triggerPortalDataRefresh("Initiating call to guardian: $phone")
+            },
+            onSyncToFirestore = { student ->
+                viewModel.triggerPortalDataRefresh("Syncing '${student.fullName}' profile to Cloud Firestore...")
+            }
+        )
+    }
+
     // --- DIALOG: UPLOAD DIGITAL RESOURCE ---
     if (showUploadResourceDialog) {
-        AlertDialog(
-            onDismissRequest = { showUploadResourceDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.CloudUpload, contentDescription = null, tint = GhanaNavyPrimary)
-                    Column {
-                        Text("Upload Resource & Media", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text("Textbooks, Syllabi, Media & School History", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedTextField(
-                        value = resourceTitleInput,
-                        onValueChange = { resourceTitleInput = it },
-                        label = { Text("Resource Title / Book Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("resource_title_input")
-                    )
-
-                    OutlinedTextField(
-                        value = resourceAuthorInput,
-                        onValueChange = { resourceAuthorInput = it },
-                        label = { Text("Author / Publisher") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("resource_author_input")
-                    )
-
-                    Column {
-                        Text("Category:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        val catList = listOf("TEXTBOOK", "SYLLABUS", "CURRICULUM", "REFERENCE", "SCHOOL_HISTORY", "PROMOTIONAL_VIDEO", "SCHOOL_MEDIA")
-                        ScrollableTabRow(
-                            selectedTabIndex = catList.indexOf(resourceCategoryInput).coerceAtLeast(0),
-                            edgePadding = 0.dp
-                        ) {
-                            catList.forEach { cat ->
-                                Tab(
-                                    selected = resourceCategoryInput == cat,
-                                    onClick = { resourceCategoryInput = cat }
-                                ) {
-                                    Text(cat.replace("_", " "), fontSize = 10.sp, modifier = Modifier.padding(vertical = 4.dp, horizontal = 6.dp))
-                                }
-                            }
-                        }
-                    }
-
-                    Column {
-                        Text("Target Class:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        val clsList = listOf("ALL", "JHS 1", "JHS 2 - Gold", "JHS 3", "Primary 4", "Primary 5", "Primary 6")
-                        ScrollableTabRow(
-                            selectedTabIndex = clsList.indexOf(resourceTargetClassInput).coerceAtLeast(0),
-                            edgePadding = 0.dp
-                        ) {
-                            clsList.forEach { cls ->
-                                Tab(
-                                    selected = resourceTargetClassInput == cls,
-                                    onClick = { resourceTargetClassInput = cls }
-                                ) {
-                                    Text(cls, fontSize = 10.sp, modifier = Modifier.padding(vertical = 4.dp, horizontal = 6.dp))
-                                }
-                            }
-                        }
-                    }
-
-                    Column {
-                        Text("Subject:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        val subList = listOf("ALL", "Mathematics", "Integrated Science", "English Language", "Social Studies", "ICT")
-                        ScrollableTabRow(
-                            selectedTabIndex = subList.indexOf(resourceSubjectInput).coerceAtLeast(0),
-                            edgePadding = 0.dp
-                        ) {
-                            subList.forEach { sub ->
-                                Tab(
-                                    selected = resourceSubjectInput == sub,
-                                    onClick = { resourceSubjectInput = sub }
-                                ) {
-                                    Text(sub, fontSize = 10.sp, modifier = Modifier.padding(vertical = 4.dp, horizontal = 6.dp))
-                                }
-                            }
-                        }
-                    }
-
-                    Column {
-                        Text("File Format:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("PDF", "EPUB", "MP4", "PNG").forEach { fmt ->
-                                FilterChip(
-                                    selected = resourceFileFormatInput == fmt,
-                                    onClick = { resourceFileFormatInput = fmt },
-                                    label = { Text(fmt, fontSize = 10.sp) }
-                                )
-                            }
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = resourceDescriptionInput,
-                        onValueChange = { resourceDescriptionInput = it },
-                        label = { Text("Resource Description & Notes") },
-                        minLines = 2,
-                        modifier = Modifier.fillMaxWidth().testTag("resource_description_input")
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (resourceTitleInput.isNotBlank()) {
-                            viewModel.uploadDigitalResource(
-                                title = resourceTitleInput,
-                                authorOrPublisher = resourceAuthorInput,
-                                category = resourceCategoryInput,
-                                resourceType = if (resourceFileFormatInput in listOf("MP4", "PNG")) "MEDIA" else "DOCUMENT",
-                                targetClass = resourceTargetClassInput,
-                                subject = resourceSubjectInput,
-                                targetAudience = resourceAudienceInput,
-                                description = resourceDescriptionInput,
-                                fileFormat = resourceFileFormatInput
-                            )
-                            showUploadResourceDialog = false
-                            resourceTitleInput = ""
-                            resourceDescriptionInput = ""
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
-                    modifier = Modifier.testTag("submit_upload_resource_button")
-                ) {
-                    Text("Upload Resource")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUploadResourceDialog = false }) {
-                    Text("Cancel")
-                }
+        UploadResourceDialog(
+            userRole = "Proprietor",
+            onDismiss = { showUploadResourceDialog = false },
+            onUpload = { title, author, category, type, targetClass, subject, audience, desc, format, urlOrPath, role ->
+                viewModel.uploadDigitalResource(
+                    title = title,
+                    authorOrPublisher = author,
+                    category = category,
+                    resourceType = type,
+                    targetClass = targetClass,
+                    subject = subject,
+                    targetAudience = audience,
+                    description = desc,
+                    fileFormat = format,
+                    fileUrlOrPath = urlOrPath,
+                    uploadedBy = role
+                )
             }
         )
     }

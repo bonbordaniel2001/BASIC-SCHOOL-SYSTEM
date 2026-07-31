@@ -19,6 +19,7 @@ import com.example.ui.components.AuthDialog
 import com.example.ui.components.LoadingOverlay
 import com.example.ui.components.NotificationCenterSheet
 import com.example.ui.components.RoleSelectorBar
+import com.example.ui.screens.AlumniScreen
 import com.example.ui.screens.GuardianScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LoginScreen
@@ -119,6 +120,7 @@ class MainActivity : ComponentActivity() {
                                 ViewMode.TEACHER -> TeacherScreen(viewModel = viewModel)
                                 ViewMode.GUARDIAN -> GuardianScreen(viewModel = viewModel)
                                 ViewMode.CALENDAR -> SchoolCalendarScreen(viewModel = viewModel)
+                                ViewMode.ALUMNI -> AlumniScreen(viewModel = viewModel)
                             }
                         }
 
