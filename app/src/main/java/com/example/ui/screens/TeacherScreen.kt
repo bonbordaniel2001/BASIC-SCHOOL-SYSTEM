@@ -1286,7 +1286,7 @@ fun TeacherScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Akoma Campus GPS (5.6037° N, 0.1870° W)",
+                                    text = "Akoma Campus GPS (8.5945° N, 0.2366° E)",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

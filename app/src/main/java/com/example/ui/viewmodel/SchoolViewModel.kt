@@ -909,9 +909,9 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // --- Teacher Workspace State ---
-    // School Coordinates: Lat 5.6037, Lng -0.1870 (Akoma Campus, Ghana)
-    val schoolLat = 5.6037
-    val schoolLng = -0.1870
+    // School Geofence Coordinates: Lat 8.5945243, Lng 0.2366327
+    val schoolLat = 8.5945243
+    val schoolLng = 0.2366327
     val geofenceRadiusMeters = 200.0
 
     private val _simulatedLocationState = MutableStateFlow(SimulatedGeofenceState.ON_CAMPUS_INSIDE_GEOFENCE)
