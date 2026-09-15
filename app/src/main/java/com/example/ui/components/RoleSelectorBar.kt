@@ -76,7 +76,7 @@ fun RoleSelectorBar(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (schoolName.isNotBlank()) schoolName else "Akoma Primary & JHS",
+                            text = if (schoolName.isNotBlank()) schoolName else "St. Talafor Primary & JHS",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,

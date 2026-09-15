@@ -51,9 +51,10 @@ import com.example.data.model.*
         SchoolPerformanceMetric::class,
         YearlyAdminRegistryEntry::class,
         AlumniAspirant::class,
-        AdminVote::class
+        AdminVote::class,
+        PromotionDemotionRequest::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -80,7 +81,7 @@ abstract class SchoolDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     SchoolDatabase::class.java,
-                    "akoma_school_database"
+                    "st_talafor_school_database"
                 )
                     .fallbackToDestructiveMigration()
                     .build()

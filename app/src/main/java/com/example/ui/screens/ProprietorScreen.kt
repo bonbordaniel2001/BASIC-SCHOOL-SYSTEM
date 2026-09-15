@@ -4,6 +4,8 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -39,6 +41,7 @@ import com.example.data.model.TeacherLoanRequest
 import com.example.data.model.TransactionApproval
 import com.example.ui.components.LoadingOverlay
 import com.example.ui.components.LoadingSpinner
+import com.example.ui.components.LoanMomoAuthorizationDialog
 import com.example.ui.components.RoleDelegationDialog
 import com.example.ui.components.StudentListViewWithSearch
 import com.example.ui.components.StudentProfileCard
@@ -78,13 +81,41 @@ fun ProprietorScreen(
     val allDigitalResources by viewModel.allDigitalResources.collectAsState()
     val allClassAssignments by viewModel.allClassAssignments.collectAsState()
     val allStudentProfiles by viewModel.allStudentProfiles.collectAsState()
+    val allPromotionDemotionRequests by viewModel.allPromotionDemotionRequests.collectAsState()
+    val allStudentAddRequests by viewModel.allStudentAddRequests.collectAsState()
+    val proprietorTargetSection by viewModel.proprietorTargetSection.collectAsState()
     val uiLoadingState by viewModel.uiLoadingState.collectAsState()
     val loadingMessage by viewModel.loadingMessage.collectAsState()
 
     var selectedStudentProfileForModal by remember { mutableStateOf<StudentProfile?>(null) }
+    var playingMediaResource by remember { mutableStateOf<DigitalResource?>(null) }
+    var approvalsFilterCategory by remember { mutableStateOf("ALL") }
 
-    // Proprietor Portal Navigation Bar Active Tab (0: Overview & Hub, 1: Fee Balances, 2: Staff & Roster, 3: Analytics & CSV, 4: Lesson Plans, 5: Timetable, 6: Loans, 7: Staff Clock-In, 8: Parent Messages, 9: Broadcast & SMS, 10: Digital Library, 11: Assignments, 12: Directory, 13: Roles)
+    // Proprietor Portal Navigation Bar Active Tab (0: Overview & Hub, 1: Fee Balances, 2: Staff & Roster, 3: Analytics & CSV, 4: Lesson Plans, 5: Timetable, 6: Loans, 7: Staff Clock-In, 8: Parent Messages, 9: Broadcast & SMS, 10: Digital Library, 11: Assignments, 12: Directory, 13: Roles, 14: Approvals & Grants)
     var activeProprietorTab by remember { mutableStateOf(0) }
+
+    LaunchedEffect(proprietorTargetSection) {
+        proprietorTargetSection?.let { section ->
+            when (section) {
+                "APPROVALS" -> activeProprietorTab = 14
+                "FEES" -> activeProprietorTab = 1
+                "STAFF" -> activeProprietorTab = 2
+                "ANALYTICS" -> activeProprietorTab = 3
+                "LIBRARY" -> activeProprietorTab = 10
+                "ASSIGNMENTS" -> activeProprietorTab = 11
+                "ROLES" -> activeProprietorTab = 13
+                else -> {}
+            }
+            viewModel.clearProprietorTargetSection()
+        }
+    }
+
+    val pendingPromotionsCount = allPromotionDemotionRequests.count { it.status == "PENDING" }
+    val pendingAddStudentsCount = allStudentAddRequests.count { it.status == "PENDING" }
+    val pendingLoansCount = allTeacherLoanRequests.count { it.status == "PENDING" }
+    val pendingTransactionsCount = approvalsList.count { it.status == "PENDING" }
+    val pendingAccountsCount = pendingUserAccounts.size
+    val totalPendingRequestsToGrant = pendingPromotionsCount + pendingAddStudentsCount + pendingLoansCount + pendingTransactionsCount + pendingAccountsCount
 
     // Digital Library & Media Upload State
     var showUploadResourceDialog by remember { mutableStateOf(false) }
@@ -113,6 +144,7 @@ fun ProprietorScreen(
     var selectedLoanForDecision by remember { mutableStateOf<TeacherLoanRequest?>(null) }
     var loanDecisionNoteInput by remember { mutableStateOf("") }
     var showLoanDecisionDialog by remember { mutableStateOf(false) }
+    var activeLoanForMomoApproval by remember { mutableStateOf<TeacherLoanRequest?>(null) }
 
     // School-Wide Master Timetable State
     var proprietorTimetableClassFilter by remember { mutableStateOf("ALL") }
@@ -166,6 +198,17 @@ fun ProprietorScreen(
     var paySalaryAmountInput by remember { mutableStateOf("") }
     var paySalaryMethodInput by remember { mutableStateOf("MTN MoMo") }
     var paySalaryNotesInput by remember { mutableStateOf("") }
+    var proprietorSalaryCodeInput by remember { mutableStateOf("") }
+
+    // Guardian Fee Collection by Student & Class
+    var showReceiveGuardianPaymentDialog by remember { mutableStateOf(false) }
+
+    // Academic Class & Student Promotion
+    var showProprietorClassPromotionDialog by remember { mutableStateOf(false) }
+
+    // Official Receipts and Media Preview
+    val activeReceipt by viewModel.activeReceipt.collectAsState()
+    val downloadedMediaResource by viewModel.downloadedMediaResource.collectAsState()
 
     var showWithholdSalaryDialog by remember { mutableStateOf(false) }
     var staffToWithhold by remember { mutableStateOf<StaffMember?>(null) }
@@ -206,6 +249,86 @@ fun ProprietorScreen(
     var selectedPlanToReview by remember { mutableStateOf<LessonPlan?>(null) }
     var reviewFeedbackText by remember { mutableStateOf("") }
     var reviewTargetStatus by remember { mutableStateOf("APPROVED") }
+
+    // Receive Guardian Payment Dialog by Student and Class
+    if (showReceiveGuardianPaymentDialog) {
+        com.example.ui.components.ReceiveGuardianPaymentDialog(
+            allStudentLedgers = allStudentLedgers,
+            onDismiss = { showReceiveGuardianPaymentDialog = false },
+            onSubmitPayment = { studentId, studentName, className, guardianName, amountGhc, paymentDate, paymentMethod, feeCategory, notes ->
+                viewModel.receiveGuardianPaymentByStudentAndClass(
+                    studentId = studentId,
+                    studentName = studentName,
+                    className = className,
+                    guardianName = guardianName,
+                    amountGhc = amountGhc,
+                    paymentDate = paymentDate,
+                    paymentMethod = paymentMethod,
+                    feeCategory = feeCategory,
+                    notes = notes
+                )
+                showReceiveGuardianPaymentDialog = false
+            }
+        )
+    }
+
+    // Proprietor Class / Student Promotion & Demotion Dialog
+    if (showProprietorClassPromotionDialog) {
+        com.example.ui.components.ClassPromotionDialog(
+            userRole = "Proprietor",
+            allStudents = allStudentProfiles,
+            onDismiss = { showProprietorClassPromotionDialog = false },
+            onPromoteStudent = { studentId, targetClass ->
+                viewModel.promoteStudent(studentId, targetClass)
+            },
+            onDemoteStudent = { studentId, targetClass ->
+                viewModel.demoteStudent(studentId, targetClass)
+            },
+            onPromoteClass = { currentClass, targetClass ->
+                viewModel.promoteClass(currentClass, targetClass)
+            },
+            onDemoteClass = { currentClass, targetClass ->
+                viewModel.demoteClass(currentClass, targetClass)
+            }
+        )
+    }
+
+    // Official Downloadable Transaction Receipt Dialog
+    if (activeReceipt != null) {
+        com.example.ui.components.DownloadableReceiptDialog(
+            receipt = activeReceipt!!,
+            onDismiss = { viewModel.dismissActiveReceipt() }
+        )
+    }
+
+    // Downloaded Media Dialog (Audio, Video, Document Preview & Playback)
+    if (downloadedMediaResource != null) {
+        com.example.ui.components.DownloadedMediaDialog(
+            resource = downloadedMediaResource!!,
+            onDismiss = { viewModel.dismissDownloadedMedia() }
+        )
+    }
+
+    if (playingMediaResource != null) {
+        com.example.ui.components.InAppMediaViewerDialog(
+            resource = playingMediaResource!!,
+            onDismiss = { playingMediaResource = null }
+        )
+    }
+
+    if (activeLoanForMomoApproval != null) {
+        LoanMomoAuthorizationDialog(
+            loan = activeLoanForMomoApproval!!,
+            onConfirmDisbursement = { network, phone, ref, pin ->
+                val loan = activeLoanForMomoApproval!!
+                val note = "Approved & Disbursed via $network to $phone (Ref: $ref)"
+                viewModel.approveTeacherLoanRequest(loan.id, note)
+                activeLoanForMomoApproval = null
+                Toast.makeText(context, "Loan approved & GH₵ ${String.format("%.2f", loan.amountGhc)} disbursed via $network console!", Toast.LENGTH_LONG).show()
+            },
+            onDismiss = { activeLoanForMomoApproval = null }
+        )
+    }
 
     // Schedule Subject Slot Dialog for Proprietor
     if (showProprietorSlotDialog) {
@@ -345,6 +468,8 @@ fun ProprietorScreen(
             else -> "Combined Administrative CSV Package"
         }
 
+        var csvDisplayMode by remember { mutableStateOf(0) } // 0: Tabular Form, 1: Raw Stream
+
         AlertDialog(
             onDismissRequest = { showExportCsvDialog = false },
             title = {
@@ -449,24 +574,57 @@ fun ProprietorScreen(
                         }
                     }
 
-                    Text("CSV Data Stream Preview:", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-
-                    // Scrollable Monospace Preview Container
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF1E1E1E),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        LazyColumn(modifier = Modifier.padding(8.dp)) {
-                            items(generatedCsvText.lines()) { line ->
-                                Text(
-                                    text = line,
-                                    color = if (line.startsWith("Record") || line.startsWith("Grade") || line.startsWith("===")) GhanaGoldAccent else Color(0xFFD4D4D4),
-                                    fontSize = 9.sp,
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                )
+                        Text("CSV Report Preview:", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            FilterChip(
+                                selected = csvDisplayMode == 0,
+                                onClick = { csvDisplayMode = 0 },
+                                label = { Text("Tabular Table", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                leadingIcon = { Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(12.dp)) },
+                                modifier = Modifier.height(26.dp).testTag("csv_toggle_tabular")
+                            )
+                            FilterChip(
+                                selected = csvDisplayMode == 1,
+                                onClick = { csvDisplayMode = 1 },
+                                label = { Text("Raw CSV", fontSize = 10.sp) },
+                                modifier = Modifier.height(26.dp).testTag("csv_toggle_raw")
+                            )
+                        }
+                    }
+
+                    if (csvDisplayMode == 0) {
+                        com.example.ui.components.CsvTablePreview(
+                            csvText = generatedCsvText,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        // Scrollable Monospace Preview Container
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1E1E1E),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(140.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(8.dp)
+                            ) {
+                                generatedCsvText.lines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        color = if (line.startsWith("Record") || line.startsWith("Grade") || line.startsWith("===")) GhanaGoldAccent else Color(0xFFD4D4D4),
+                                        fontSize = 9.sp,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+                                }
                             }
                         }
                     }
@@ -778,19 +936,45 @@ fun ProprietorScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("pay_salary_notes_input")
                     )
+
+                    OutlinedTextField(
+                        value = proprietorSalaryCodeInput,
+                        onValueChange = { proprietorSalaryCodeInput = it },
+                        label = { Text("Proprietor Secret Code (PIN)") },
+                        placeholder = { Text("Enter code to authorize (e.g. 7788)") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = GhanaGoldAccent) },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("proprietor_salary_code_input")
+                    )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         val amt = paySalaryAmountInput.toDoubleOrNull() ?: staff.monthlySalaryGhc
-                        viewModel.payStaffSalary(staff.id, amt, paySalaryMethodInput, paySalaryNotesInput)
-                        showPaySalaryDialog = false
+                        if (proprietorSalaryCodeInput.isBlank()) {
+                            android.widget.Toast.makeText(context, "Please enter your Proprietor Code to authorize salary payout", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            viewModel.payStaffSalaryWithCode(
+                                staffId = staff.id,
+                                amountGhc = amt,
+                                paymentMethod = paySalaryMethodInput,
+                                notes = paySalaryNotesInput,
+                                enteredCode = proprietorSalaryCodeInput
+                            )
+                            showPaySalaryDialog = false
+                            proprietorSalaryCodeInput = ""
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
                     modifier = Modifier.testTag("confirm_pay_salary_button")
                 ) {
-                    Text("Disburse Payout")
+                    Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = GhanaGoldAccent, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Authorize & Disburse")
                 }
             },
             dismissButton = {
@@ -1433,6 +1617,519 @@ fun ProprietorScreen(
                     icon = { Icon(Icons.Default.AdminPanelSettings, contentDescription = null) },
                     modifier = Modifier.testTag("prop_tab_roles")
                 )
+                Tab(
+                    selected = activeProprietorTab == 14,
+                    onClick = { activeProprietorTab = 14 },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Approvals & Grants", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            if (totalPendingRequestsToGrant > 0) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.error
+                                ) {
+                                    Text(
+                                        text = "$totalPendingRequestsToGrant",
+                                        color = Color.White,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    icon = { Icon(Icons.Default.Verified, contentDescription = null) },
+                    modifier = Modifier.testTag("prop_tab_approvals_hub")
+                )
+            }
+        }
+
+        // --- SECTION: ALL REQUESTS REQUIRING PROPRIETOR PERMISSION & GRANTING ---
+        // Displayed when activeProprietorTab == 14 (Dedicated Approvals Tab) OR activeProprietorTab == 0 (with pending items)
+        if (activeProprietorTab == 14 || (activeProprietorTab == 0 && totalPendingRequestsToGrant > 0)) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, GhanaGoldAccent),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("proprietor_all_requests_portal_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        // Section Header
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(GhanaNavyPrimary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Verified,
+                                        contentDescription = null,
+                                        tint = GhanaGoldAccent,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = "Requests & Permissions to Grant",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = GhanaNavyPrimary
+                                    )
+                                    Text(
+                                        text = "Grant teacher permissions: promotions, demotions & new students",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            if (totalPendingRequestsToGrant > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.error
+                                ) {
+                                    Text(
+                                        text = "$totalPendingRequestsToGrant Pending",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            } else {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = GhanaEmeraldGreen
+                                ) {
+                                    Text(
+                                        text = "All Up to Date",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Filter Chips Row
+                        ScrollableTabRow(
+                            selectedTabIndex = when (approvalsFilterCategory) {
+                                "PROMOTIONS" -> 1
+                                "NEW_STUDENTS" -> 2
+                                "LOANS" -> 3
+                                "FINANCIAL" -> 4
+                                "ACCOUNTS" -> 5
+                                else -> 0
+                            },
+                            edgePadding = 0.dp,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Tab(
+                                selected = approvalsFilterCategory == "ALL",
+                                onClick = { approvalsFilterCategory = "ALL" },
+                                text = { Text("All ($totalPendingRequestsToGrant)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                            )
+                            Tab(
+                                selected = approvalsFilterCategory == "PROMOTIONS",
+                                onClick = { approvalsFilterCategory = "PROMOTIONS" },
+                                text = { Text("Promotions ($pendingPromotionsCount)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                            )
+                            Tab(
+                                selected = approvalsFilterCategory == "NEW_STUDENTS",
+                                onClick = { approvalsFilterCategory = "NEW_STUDENTS" },
+                                text = { Text("New Students ($pendingAddStudentsCount)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                            )
+                            Tab(
+                                selected = approvalsFilterCategory == "LOANS",
+                                onClick = { approvalsFilterCategory = "LOANS" },
+                                text = { Text("Loans ($pendingLoansCount)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                            )
+                            Tab(
+                                selected = approvalsFilterCategory == "FINANCIAL",
+                                onClick = { approvalsFilterCategory = "FINANCIAL" },
+                                text = { Text("Financial ($pendingTransactionsCount)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                            )
+                            Tab(
+                                selected = approvalsFilterCategory == "ACCOUNTS",
+                                onClick = { approvalsFilterCategory = "ACCOUNTS" },
+                                text = { Text("Accounts ($pendingAccountsCount)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                            )
+                        }
+
+                        // --- SUBSECTION 1: TEACHER STUDENT PROMOTION & DEMOTION REQUESTS ---
+                        if (approvalsFilterCategory == "ALL" || approvalsFilterCategory == "PROMOTIONS") {
+                            Text(
+                                text = "Student Promotion & Demotion Permission Requests (${allPromotionDemotionRequests.count { it.status == "PENDING" }} Pending):",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = GhanaNavyPrimary
+                            )
+
+                            val visiblePromoRequests = if (activeProprietorTab == 14) allPromotionDemotionRequests else allPromotionDemotionRequests.filter { it.status == "PENDING" }
+
+                            if (visiblePromoRequests.isEmpty()) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = "No pending student promotion or demotion requests from teachers.",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                            } else {
+                                visiblePromoRequests.forEach { req ->
+                                    val isDemotion = req.requestType.contains("DEMOTION")
+                                    val isClassWide = req.requestType.startsWith("CLASS_")
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isDemotion) Color(0xFFE65100) else GhanaEmeraldGreen),
+                                        modifier = Modifier.fillMaxWidth().testTag("promo_request_card_${req.id}")
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = if (isDemotion) Color(0xFFFDE8E8) else Color(0xFFDEF7EC)
+                                                    ) {
+                                                        Text(
+                                                            text = if (isDemotion) "DEMOTION REQUEST" else "PROMOTION REQUEST",
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.ExtraBold,
+                                                            color = if (isDemotion) Color(0xFF9B1C1C) else Color(0xFF03543F),
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                    if (isClassWide) {
+                                                        Surface(shape = RoundedCornerShape(6.dp), color = GhanaNavyPrimary.copy(alpha = 0.1f)) {
+                                                            Text("Class-Wide", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                        }
+                                                    }
+                                                }
+
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = when (req.status) {
+                                                        "APPROVED" -> GhanaEmeraldGreen
+                                                        "REJECTED" -> MaterialTheme.colorScheme.error
+                                                        else -> GhanaGoldAccent
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = req.status,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (req.status == "PENDING") GhanaNavyPrimary else Color.White,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            Text(
+                                                text = if (isClassWide) "Class: ${req.currentClass} ➔ ${req.targetClass}" else "Student: ${req.studentName ?: "Student #${req.studentId}"} (${req.currentClass} ➔ ${req.targetClass})",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = GhanaNavyPrimary
+                                            )
+
+                                            Text(
+                                                text = "Submitted by: ${req.requestedByTeacher} • Reason: ${req.reason}",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+
+                                            if (req.status == "PENDING") {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Button(
+                                                        onClick = {
+                                                            viewModel.approvePromotionDemotionRequest(req)
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = if (isDemotion) Color(0xFFD97706) else GhanaEmeraldGreen),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        modifier = Modifier.weight(1f).testTag("grant_promo_${req.id}")
+                                                    ) {
+                                                        Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Grant & Execute", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            viewModel.rejectPromotionDemotionRequest(req, "Declined by Proprietor")
+                                                        },
+                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        modifier = Modifier.weight(1f).testTag("reject_promo_${req.id}")
+                                                    ) {
+                                                        Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Decline", fontSize = 11.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- SUBSECTION 2: TEACHER ADD NEW STUDENT PERMISSION REQUESTS ---
+                        if (approvalsFilterCategory == "ALL" || approvalsFilterCategory == "NEW_STUDENTS") {
+                            Text(
+                                text = "New Student Admission Permission Requests (${allStudentAddRequests.count { it.status == "PENDING" }} Pending):",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = GhanaNavyPrimary
+                            )
+
+                            val visibleAddRequests = if (activeProprietorTab == 14) allStudentAddRequests else allStudentAddRequests.filter { it.status == "PENDING" }
+
+                            if (visibleAddRequests.isEmpty()) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = "No pending new student admission requests from teachers.",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                            } else {
+                                visibleAddRequests.forEach { req ->
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, GhanaNavyPrimary.copy(alpha = 0.4f)),
+                                        modifier = Modifier.fillMaxWidth().testTag("add_student_request_card_${req.id}")
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = req.studentName,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp,
+                                                    color = GhanaNavyPrimary
+                                                )
+
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = when (req.status) {
+                                                        "APPROVED" -> GhanaEmeraldGreen
+                                                        "REJECTED" -> MaterialTheme.colorScheme.error
+                                                        else -> GhanaGoldAccent
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = req.status,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (req.status == "PENDING") GhanaNavyPrimary else Color.White,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            Text(
+                                                text = "Assigned Class: ${req.className} | Guardian Phone: ${req.guardianPhone} | Estimated Fees: GH₵ ${req.estimatedFeesGhc}",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+
+                                            Text(
+                                                text = "Requested By: ${req.requestedByTeacher} on ${req.requestDate} • Note: ${req.reason}",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+
+                                            if (req.status == "PENDING") {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Button(
+                                                        onClick = {
+                                                            viewModel.approveStudentAddRequest(req)
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = GhanaEmeraldGreen),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        modifier = Modifier.weight(1f).testTag("grant_student_add_${req.id}")
+                                                    ) {
+                                                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Grant & Enroll Student", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            viewModel.rejectStudentAddRequest(req, "Declined by Proprietor")
+                                                        },
+                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        modifier = Modifier.weight(1f).testTag("reject_student_add_${req.id}")
+                                                    ) {
+                                                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Decline", fontSize = 11.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- SUBSECTION 3: TEACHER SALARY ADVANCE & LOAN REQUESTS ---
+                        if (approvalsFilterCategory == "ALL" || approvalsFilterCategory == "LOANS") {
+                            val pendingLoans = allTeacherLoanRequests.filter { it.status == "PENDING" }
+                            if (pendingLoans.isNotEmpty() || approvalsFilterCategory == "LOANS") {
+                                Text(
+                                    text = "Teacher Salary Advance & Loan Requests (${pendingLoans.size} Pending):",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = GhanaNavyPrimary
+                                )
+
+                                if (pendingLoans.isEmpty()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("No pending teacher loan requests.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
+                                    }
+                                } else {
+                                    pendingLoans.forEach { loan ->
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                    Text(loan.teacherName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text("GH₵ ${loan.amountGhc}", fontWeight = FontWeight.ExtraBold, color = GhanaNavyPrimary)
+                                                }
+                                                Text("Term: ${loan.repaymentDurationMonths} month(s) • Purpose: ${loan.reason}", fontSize = 11.sp)
+                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    Button(
+                                                        onClick = { activeLoanForMomoApproval = loan },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                                        modifier = Modifier.weight(1f).testTag("tab6_approve_loan_${loan.id}")
+                                                    ) {
+                                                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Approve via MoMo", fontSize = 11.sp)
+                                                    }
+                                                    OutlinedButton(
+                                                        onClick = { viewModel.rejectTeacherLoanRequest(loan.id, "Declined by Proprietor") },
+                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                                        modifier = Modifier.weight(1f)
+                                                    ) {
+                                                        Text("Decline", fontSize = 11.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- SUBSECTION 4: SPECIAL FINANCIAL TRANSACTION OVERRIDES ---
+                        if (approvalsFilterCategory == "ALL" || approvalsFilterCategory == "FINANCIAL") {
+                            val pendingFin = approvalsList.filter { it.status == "PENDING" }
+                            if (pendingFin.isNotEmpty() || approvalsFilterCategory == "FINANCIAL") {
+                                Text(
+                                    text = "Special Financial Transaction Approvals (${pendingFin.size} Pending):",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = GhanaNavyPrimary
+                                )
+
+                                if (pendingFin.isEmpty()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("No pending financial transaction approvals.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
+                                    }
+                                } else {
+                                    pendingFin.forEach { item ->
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                    Text(item.requestType.replace("_", " "), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text("GH₵ ${item.amountGhc}", fontWeight = FontWeight.ExtraBold, color = GhanaNavyPrimary)
+                                                }
+                                                Text("Reason: ${item.reason} • Requested by: ${item.requestorName} (${item.requestorRole})", fontSize = 11.sp)
+                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    Button(
+                                                        onClick = { viewModel.approveTransaction(item.id) },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                                        modifier = Modifier.weight(1f)
+                                                    ) {
+                                                        Text("Approve", fontSize = 11.sp)
+                                                    }
+                                                    OutlinedButton(
+                                                        onClick = { viewModel.rejectTransaction(item.id) },
+                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                                        modifier = Modifier.weight(1f)
+                                                    ) {
+                                                        Text("Reject", fontSize = 11.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1754,6 +2451,20 @@ fun ProprietorScreen(
                             }
                         }
 
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = {
+                                showReceiveGuardianPaymentDialog = true
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = GhanaEmeraldGreen),
+                            modifier = Modifier.testTag("proprietor_receive_guardian_money_btn")
+                        ) {
+                            Icon(Icons.Default.Payments, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Receive Money", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
                         Button(
                             onClick = {
                                 selectedStudentForPayment = allStudentLedgers.firstOrNull()
@@ -1765,8 +2476,9 @@ fun ProprietorScreen(
                         ) {
                             Icon(Icons.Default.AddCard, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Record Payment", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Record", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
+                    }
                     }
 
                     // Financial Summary Indicators
@@ -3281,15 +3993,15 @@ fun ProprietorScreen(
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 Button(
                                                     onClick = {
-                                                        viewModel.approveTeacherLoanRequest(req.id, "Approved by Proprietor")
+                                                        activeLoanForMomoApproval = req
                                                     },
                                                     colors = ButtonDefaults.buttonColors(containerColor = GhanaEmeraldGreen),
                                                     shape = RoundedCornerShape(8.dp),
                                                     modifier = Modifier.weight(1f).testTag("approve_loan_button_${req.id}")
                                                 ) {
-                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(14.dp))
                                                     Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Approve Loan", fontSize = 11.sp)
+                                                    Text("Approve via MoMo", fontSize = 11.sp)
                                                 }
 
                                                 OutlinedButton(
@@ -3693,11 +4405,30 @@ fun ProprietorScreen(
                                                 }
                                             }
 
-                                            IconButton(
-                                                onClick = { viewModel.deleteDigitalResource(res.id) },
-                                                modifier = Modifier.size(28.dp).testTag("delete_digital_res_${res.id}")
-                                            ) {
-                                                Icon(Icons.Default.Delete, contentDescription = "Delete Resource", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                IconButton(
+                                                    onClick = { playingMediaResource = res },
+                                                    modifier = Modifier.size(28.dp).testTag("play_digital_res_${res.id}")
+                                                ) {
+                                                    Icon(
+                                                        if (res.resourceType == "AUDIO" || res.resourceType == "VIDEO" || res.fileFormat == "MP4") Icons.Default.PlayArrow else Icons.Default.MenuBook,
+                                                        contentDescription = "Read or Play in App",
+                                                        tint = GhanaGoldAccent,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                                IconButton(
+                                                    onClick = { viewModel.downloadDigitalResourceMedia(res) },
+                                                    modifier = Modifier.size(28.dp).testTag("download_digital_res_${res.id}")
+                                                ) {
+                                                    Icon(Icons.Default.Download, contentDescription = "Download Resource to Device", tint = GhanaNavyPrimary, modifier = Modifier.size(16.dp))
+                                                }
+                                                IconButton(
+                                                    onClick = { viewModel.deleteDigitalResource(res.id) },
+                                                    modifier = Modifier.size(28.dp).testTag("delete_digital_res_${res.id}")
+                                                ) {
+                                                    Icon(Icons.Default.Delete, contentDescription = "Delete Resource", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                                }
                                             }
                                         }
 
@@ -3952,17 +4683,31 @@ fun ProprietorScreen(
                             }
                         }
 
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = GhanaEmeraldGreen.copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                text = "${allStudentProfiles.size} Students Enrolled",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0F5132),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = { showProprietorClassPromotionDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("proprietor_open_promotion_dialog_btn")
+                            ) {
+                                Icon(Icons.Default.School, contentDescription = null, tint = GhanaGoldAccent, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Promote / Demote", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = GhanaEmeraldGreen.copy(alpha = 0.12f)
+                            ) {
+                                Text(
+                                    text = "${allStudentProfiles.size} Enrolled",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0F5132),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                )
+                            }
                         }
                     }
 

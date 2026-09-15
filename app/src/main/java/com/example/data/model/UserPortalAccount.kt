@@ -23,7 +23,7 @@ data class UserPortalAccount(
     val email: String,
     val phone: String,
     val role: String, // "PROPRIETOR", "TEACHER", "GUARDIAN"
-    val schoolName: String = "Akoma Primary & JHS",
+    val schoolName: String = "St. Talafor Primary & JHS",
     val isLoggedIn: Boolean = false,
     val isProprietor: Boolean = (role == "PROPRIETOR"),
     val portalAccessRole: String = role, // Locked portal access role

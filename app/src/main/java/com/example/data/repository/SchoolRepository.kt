@@ -43,6 +43,8 @@ class SchoolRepository(
     val allTeacherLoanRequests: Flow<List<TeacherLoanRequest>> = dao.getAllTeacherLoanRequests()
     val allDigitalResources: Flow<List<DigitalResource>> = dao.getAllDigitalResources()
     val allClassAssignments: Flow<List<ClassAssignment>> = dao.getAllClassAssignments()
+    val allStudentAddRequests: Flow<List<StudentAddRequest>> = dao.getAllStudentAddRequests()
+    val allPromotionDemotionRequests: Flow<List<PromotionDemotionRequest>> = dao.getAllPromotionDemotionRequests()
     val allGuardians: Flow<List<GuardianProfile>> = guardianDao?.getAllGuardians() ?: emptyFlow()
     val allTeachers: Flow<List<TeacherProfile>> = teacherDao?.getAllTeachers() ?: emptyFlow()
     val allGrades: Flow<List<StudentGrade>> = gradeDao?.getAllGrades() ?: emptyFlow()
@@ -282,10 +284,12 @@ class SchoolRepository(
         dao.deleteStaffMemberById(staffId)
     }
 
-    suspend fun payStaffSalary(staffId: Long, amountGhc: Double, paymentMethod: String, notes: String) {
+    suspend fun payStaffSalary(staffId: Long, amountGhc: Double, paymentMethod: String, notes: String): com.example.data.model.OfficialReceipt? {
         val staffList = dao.getAllStaff().first()
-        val staff = staffList.find { it.id == staffId } ?: return
+        val staff = staffList.find { it.id == staffId } ?: return null
         val currentDate = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
+        val txnRef = "SAL-${System.currentTimeMillis().toString().takeLast(8)}"
+        val receiptNo = "PAY-${System.currentTimeMillis().toString().takeLast(6)}"
 
         val updatedStaff = staff.copy(
             paymentStatus = "PAID",
@@ -301,6 +305,24 @@ class SchoolRepository(
             type = "SALARY_PAYMENT",
             title = "Staff Payment Disbursed",
             message = "GH₵ ${String.format("%.2f", amountGhc)} paid to ${staff.name} (${staff.primaryRole}) via $paymentMethod."
+        )
+
+        return com.example.data.model.OfficialReceipt(
+            receiptNumber = receiptNo,
+            title = "STAFF SALARY PAYMENT ADVICE",
+            schoolName = "St. Talafor Primary & JHS",
+            recipientName = staff.name,
+            subDetail = "Staff Code: ${staff.staffCode} • ${staff.primaryRole}",
+            payerOrGuardian = "St. Talafor Payroll Office",
+            amountGhc = amountGhc,
+            paymentMethod = paymentMethod,
+            transactionRef = txnRef,
+            paymentDate = currentDate,
+            feeCategoryOrMemo = "Monthly Salary Disbursement",
+            remainingBalanceGhc = null,
+            authorizedBy = "School Proprietor (Auth Code Verified)",
+            notes = notes,
+            isSalaryPayment = true
         )
     }
 
@@ -811,10 +833,11 @@ class SchoolRepository(
         amountGhc: Double,
         method: String,
         phone: String,
-        reference: String
+        reference: String,
+        paymentDate: String? = null
     ): FeeTransaction {
         val dateFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
-        val dateStr = dateFormat.format(Date())
+        val dateStr = if (!paymentDate.isNullOrBlank()) paymentDate else dateFormat.format(Date())
         val txnRef = "MOMO-${System.currentTimeMillis().toString().takeLast(8)}"
         val receiptNo = "RCP-${System.currentTimeMillis().toString().takeLast(6)}"
 
@@ -874,10 +897,11 @@ class SchoolRepository(
         feeCategory: String,
         academicTerm: String = "Term 3",
         notes: String = "",
-        recordedBy: String = "Bursar / Proprietor"
+        recordedBy: String = "Bursar / Proprietor",
+        paymentDate: String? = null
     ): StudentFeePayment? {
         val dateFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
-        val dateStr = dateFormat.format(Date())
+        val dateStr = if (!paymentDate.isNullOrBlank()) paymentDate else dateFormat.format(Date())
         val txnRef = "PAY-${System.currentTimeMillis().toString().takeLast(8)}"
         val receiptNo = "RCP-${System.currentTimeMillis().toString().takeLast(6)}"
 
@@ -924,6 +948,178 @@ class SchoolRepository(
         dao.insertFeePayment(feePayment)
 
         return feePayment
+    }
+
+    // --- Academic Promotion & Demotion Operations ---
+    suspend fun updateStudentClass(studentId: Long, newClassName: String) {
+        val profile = dao.getStudentProfileById(studentId).first()
+        if (profile != null) {
+            dao.updateStudentProfile(profile.copy(className = newClassName))
+        }
+        val ledger = dao.getStudentLedgerById(studentId).first()
+        if (ledger != null) {
+            dao.updateStudentLedger(ledger.copy(className = newClassName))
+        }
+    }
+
+    suspend fun promoteStudent(studentId: Long, targetClass: String) {
+        updateStudentClass(studentId, targetClass)
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "STUDENT_PROMOTION",
+            title = "Student Promoted",
+            message = "Student ID #$studentId has been officially promoted to $targetClass."
+        )
+    }
+
+    suspend fun demoteStudent(studentId: Long, targetClass: String) {
+        updateStudentClass(studentId, targetClass)
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "STUDENT_DEMOTION",
+            title = "Student Class Demotion",
+            message = "Student ID #$studentId class placement updated to $targetClass."
+        )
+    }
+
+    suspend fun promoteEntireClass(currentClassName: String, targetClassName: String) {
+        val students = dao.getStudentProfilesByClass(currentClassName).first()
+        students.forEach { student ->
+            updateStudentClass(student.id, targetClassName)
+        }
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "CLASS_PROMOTION",
+            title = "Class Promoted Successfully",
+            message = "All ${students.size} students in class $currentClassName have been promoted to $targetClassName."
+        )
+        addNotification(
+            recipientRole = "TEACHER",
+            type = "CLASS_PROMOTION",
+            title = "Class Progression Updated",
+            message = "Class $currentClassName students advanced to $targetClassName."
+        )
+    }
+
+    suspend fun demoteEntireClass(currentClassName: String, targetClassName: String) {
+        val students = dao.getStudentProfilesByClass(currentClassName).first()
+        students.forEach { student ->
+            updateStudentClass(student.id, targetClassName)
+        }
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "CLASS_DEMOTION",
+            title = "Class Reassignment / Demotion",
+            message = "Class $currentClassName students reassigned to $targetClassName."
+        )
+    }
+
+    // --- Student Add Requests (Teacher -> Proprietor Approval) ---
+    suspend fun submitStudentAddRequest(request: StudentAddRequest): Long {
+        val id = dao.insertStudentAddRequest(request)
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "APPROVAL_REQUIRED",
+            title = "New Student Admission Request",
+            message = "Teacher ${request.requestedByTeacher} requested permission to admit ${request.studentName} into ${request.className}."
+        )
+        return id
+    }
+
+    suspend fun approveStudentAddRequest(request: StudentAddRequest) {
+        dao.updateStudentAddRequest(request.copy(status = "APPROVED"))
+        val generatedIndex = "STF/2026/${(System.currentTimeMillis() % 900 + 100)}"
+        val student = StudentProfile(
+            fullName = request.studentName,
+            indexNumber = generatedIndex,
+            className = request.className,
+            guardianName = request.guardianName.ifBlank { "Guardian of ${request.studentName}" },
+            guardianPhone = request.guardianPhone,
+            guardianEmail = ""
+        )
+        val studentId = studentDao?.insertStudent(student) ?: (System.currentTimeMillis() % 100000)
+        val ledger = StudentLedger(
+            studentId = studentId,
+            studentName = request.studentName,
+            indexNumber = generatedIndex,
+            className = request.className,
+            guardianName = student.guardianName,
+            guardianPhone = student.guardianPhone,
+            termTuitionGhc = request.estimatedFeesGhc,
+            ptaLevyGhc = 50.0,
+            ictLabFeeGhc = 50.0,
+            feedingFeeGhc = 100.0,
+            totalFeesGhc = request.estimatedFeesGhc,
+            paidFeesGhc = 0.0,
+            balanceGhc = request.estimatedFeesGhc
+        )
+        dao.insertStudentLedger(ledger)
+
+        addNotification(
+            recipientRole = "TEACHER",
+            type = "APPROVAL_REQUIRED",
+            title = "Student Admission Approved",
+            message = "Proprietor approved admission of ${request.studentName} into ${request.className}."
+        )
+    }
+
+    suspend fun rejectStudentAddRequest(request: StudentAddRequest, reason: String = "") {
+        dao.updateStudentAddRequest(request.copy(status = "REJECTED"))
+        addNotification(
+            recipientRole = "TEACHER",
+            type = "APPROVAL_REQUIRED",
+            title = "Student Admission Declined",
+            message = "Proprietor declined admission for ${request.studentName}." + if (reason.isNotBlank()) " Reason: $reason" else ""
+        )
+    }
+
+    // --- Promotion / Demotion Requests (Teacher -> Proprietor Approval) ---
+    suspend fun submitPromotionDemotionRequest(request: PromotionDemotionRequest): Long {
+        val id = dao.insertPromotionDemotionRequest(request)
+        val actionWord = if (request.requestType.contains("DEMOTION")) "Demotion" else "Promotion"
+        val subjectWord = request.studentName ?: ("Class " + request.currentClass)
+        addNotification(
+            recipientRole = "PROPRIETOR",
+            type = "APPROVAL_REQUIRED",
+            title = "$actionWord Permission Request",
+            message = "${request.requestedByTeacher} requested $actionWord permission for $subjectWord to ${request.targetClass}."
+        )
+        return id
+    }
+
+    suspend fun approvePromotionDemotionRequest(request: PromotionDemotionRequest) {
+        dao.updatePromotionDemotionRequest(request.copy(status = "APPROVED"))
+        if (request.studentId != null) {
+            if (request.requestType.contains("DEMOTION")) {
+                demoteStudent(request.studentId, request.targetClass)
+            } else {
+                promoteStudent(request.studentId, request.targetClass)
+            }
+        } else {
+            if (request.requestType.contains("DEMOTION")) {
+                demoteEntireClass(request.currentClass, request.targetClass)
+            } else {
+                promoteEntireClass(request.currentClass, request.targetClass)
+            }
+        }
+        val subjectWord = request.studentName ?: ("Class " + request.currentClass)
+        addNotification(
+            recipientRole = "TEACHER",
+            type = "APPROVAL_REQUIRED",
+            title = "Academic Request Approved",
+            message = "Proprietor granted permission for $subjectWord to move to ${request.targetClass}."
+        )
+    }
+
+    suspend fun rejectPromotionDemotionRequest(request: PromotionDemotionRequest, reason: String = "") {
+        dao.updatePromotionDemotionRequest(request.copy(status = "REJECTED"))
+        val subjectWord = request.studentName ?: ("Class " + request.currentClass)
+        addNotification(
+            recipientRole = "TEACHER",
+            type = "APPROVAL_REQUIRED",
+            title = "Academic Request Declined",
+            message = "Proprietor declined the progression request for $subjectWord to ${request.targetClass}." + if (reason.isNotBlank()) " Reason: $reason" else ""
+        )
     }
 
     suspend fun seedInitialDataIfEmpty() {
@@ -1033,7 +1229,7 @@ class SchoolRepository(
                     targetType = "ALL_PARENTS",
                     targetDetail = "All Primary & JHS Parents",
                     channel = "WHATSAPP",
-                    messageText = "Dear Parents/Guardians, Akoma Academy Term 3 PTA Meeting is scheduled for Saturday at 10:00 AM in the Assembly Hall.",
+                    messageText = "Dear Parents/Guardians, St. Talafor Academy Term 3 PTA Meeting is scheduled for Saturday at 10:00 AM in the Assembly Hall.",
                     recipientCount = 380,
                     estimatedCostGhc = 0.00,
                     timestampString = "18 Jul 2026, 09:30",
@@ -1592,7 +1788,7 @@ class SchoolRepository(
                     recipientRole = "GUARDIAN",
                     type = "BROADCAST",
                     title = "Term 3 PTA Assembly Notice",
-                    message = "Akoma Academy Term 3 PTA Meeting is scheduled for Saturday at 10:00 AM.",
+                    message = "St. Talafor Academy Term 3 PTA Meeting is scheduled for Saturday at 10:00 AM.",
                     timestampString = "18 Jul 2026, 10:00",
                     isRead = true
                 )
@@ -1940,7 +2136,7 @@ class SchoolRepository(
                     timeString = "08:00 AM",
                     description = "Annual track and field championship featuring football, netball, relay races, and field events across all houses.",
                     targetAudience = "STUDENTS",
-                    location = "Akoma Sports Complex",
+                    location = "St. Talafor Sports Complex",
                     organizer = "Sports & Physical Education Dept",
                     isImportant = false
                 )

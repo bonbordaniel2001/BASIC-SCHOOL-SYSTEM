@@ -56,7 +56,15 @@ fun GuardianScreen(
     val uiLoadingState by viewModel.uiLoadingState.collectAsState()
     val loadingMessage by viewModel.loadingMessage.collectAsState()
 
+    val guardianTargetTab by viewModel.guardianTargetTab.collectAsState()
     var selectedTab by remember { mutableStateOf(0) } // 0: Financials, 1: Attendance, 2: Grades, 3: Timetable, 4: Teacher Messaging, 5: Ward Textbooks, 6: Ward Assignments
+
+    LaunchedEffect(guardianTargetTab) {
+        guardianTargetTab?.let { target ->
+            selectedTab = target
+            viewModel.clearGuardianTargetTab()
+        }
+    }
     var guardianLibCategoryFilter by remember { mutableStateOf("ALL") }
     var guardianAssignmentPeriodFilter by remember { mutableStateOf("ALL") }
     var guardianTeacherRecipient by remember { mutableStateOf("Mr. Kojo Mensah (Class Teacher)") }
@@ -76,7 +84,12 @@ fun GuardianScreen(
     val momoPhone by viewModel.momoPhone.collectAsState()
     val momoAmount by viewModel.momoAmount.collectAsState()
     val momoReference by viewModel.momoReference.collectAsState()
+    val momoPin by viewModel.momoPin.collectAsState()
+    val momoPaymentDate by viewModel.momoPaymentDate.collectAsState()
     val isProcessingMomo by viewModel.isProcessingMomo.collectAsState()
+    val activeReceipt by viewModel.activeReceipt.collectAsState()
+    val downloadedMediaResource by viewModel.downloadedMediaResource.collectAsState()
+    var playingMediaResource by remember { mutableStateOf<DigitalResource?>(null) }
 
     if (showMomoDialog) {
         MomoPaymentDialog(
@@ -84,6 +97,10 @@ fun GuardianScreen(
             phone = momoPhone,
             amount = momoAmount,
             reference = momoReference,
+            pin = momoPin,
+            onPinChange = { viewModel.setMomoPin(it) },
+            paymentDate = momoPaymentDate,
+            onPaymentDateChange = { viewModel.setMomoPaymentDate(it) },
             isProcessing = isProcessingMomo,
             onNetworkSelected = { viewModel.setMomoNetwork(it) },
             onPhoneChange = { viewModel.setMomoPhone(it) },
@@ -91,6 +108,27 @@ fun GuardianScreen(
             onReferenceChange = { viewModel.setMomoReference(it) },
             onSubmitPayment = { viewModel.submitMomoPayment() },
             onDismiss = { viewModel.closeMomoDialog() }
+        )
+    }
+
+    if (activeReceipt != null) {
+        com.example.ui.components.DownloadableReceiptDialog(
+            receipt = activeReceipt!!,
+            onDismiss = { viewModel.dismissActiveReceipt() }
+        )
+    }
+
+    if (downloadedMediaResource != null) {
+        com.example.ui.components.DownloadedMediaDialog(
+            resource = downloadedMediaResource!!,
+            onDismiss = { viewModel.dismissDownloadedMedia() }
+        )
+    }
+
+    if (playingMediaResource != null) {
+        com.example.ui.components.InAppMediaViewerDialog(
+            resource = playingMediaResource!!,
+            onDismiss = { playingMediaResource = null }
         )
     }
 
@@ -129,7 +167,7 @@ fun GuardianScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("AKOMA PRIMARY & JHS", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, color = GhanaNavyPrimary)
+                            Text("ST. TALAFOR PRIMARY & JHS", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, color = GhanaNavyPrimary)
                             Text("Official Student Fee Payment Receipt", fontSize = 10.sp, color = Color.Gray)
                         }
                     }
@@ -1445,18 +1483,31 @@ fun GuardianScreen(
                                                     Text("Publisher: ${res.authorOrPublisher} • Format: ${res.fileFormat}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
 
-                                                Button(
-                                                    onClick = {
-                                                        viewModel.triggerPortalDataRefresh("Downloading '${res.title}' for $wardName...")
-                                                    },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                    modifier = Modifier.testTag("download_ward_resource_${res.id}")
-                                                ) {
-                                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Download", fontSize = 11.sp)
+                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    Button(
+                                                        onClick = {
+                                                            viewModel.downloadDigitalResourceMedia(res)
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                        modifier = Modifier.testTag("download_ward_resource_${res.id}")
+                                                    ) {
+                                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Download", fontSize = 11.sp)
+                                                    }
+
+                                                    OutlinedButton(
+                                                        onClick = { playingMediaResource = res },
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                        modifier = Modifier.testTag("play_ward_resource_${res.id}")
+                                                    ) {
+                                                        Icon(if (res.resourceType == "DOCUMENT") Icons.Default.MenuBook else Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text(if (res.resourceType == "DOCUMENT") "Read in App" else "Play on App", fontSize = 11.sp)
+                                                    }
                                                 }
                                             }
 

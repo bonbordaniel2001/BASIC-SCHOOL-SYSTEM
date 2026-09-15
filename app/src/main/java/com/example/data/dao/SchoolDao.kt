@@ -229,6 +229,16 @@ interface SchoolDao {
     @Update
     suspend fun updateStudentAddRequest(request: StudentAddRequest)
 
+    // --- Promotion / Demotion Requests (Teacher -> Proprietor Approval) ---
+    @Query("SELECT * FROM promotion_demotion_requests ORDER BY id DESC")
+    fun getAllPromotionDemotionRequests(): Flow<List<PromotionDemotionRequest>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPromotionDemotionRequest(request: PromotionDemotionRequest): Long
+
+    @Update
+    suspend fun updatePromotionDemotionRequest(request: PromotionDemotionRequest)
+
     // --- Direct Messages (Guardian-Teacher Communication) ---
     @Query("SELECT * FROM direct_messages ORDER BY id DESC")
     fun getAllDirectMessages(): Flow<List<DirectMessage>>

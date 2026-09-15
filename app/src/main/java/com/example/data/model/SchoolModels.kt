@@ -233,6 +233,23 @@ data class StudentAddRequest(
 )
 
 /**
+ * Academic Promotion/Demotion Request submitted by Teacher for Proprietor Approval
+ */
+@Entity(tableName = "promotion_demotion_requests")
+data class PromotionDemotionRequest(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val requestType: String, // "STUDENT_PROMOTION", "STUDENT_DEMOTION", "CLASS_PROMOTION", "CLASS_DEMOTION"
+    val studentId: Long? = null,
+    val studentName: String? = null,
+    val currentClass: String,
+    val targetClass: String,
+    val reason: String = "",
+    val requestedByTeacher: String = "Class Teacher",
+    val status: String = "PENDING", // "PENDING", "APPROVED", "REJECTED"
+    val requestDate: String = "2026-09-14"
+)
+
+/**
  * School Global Settings Entity
  */
 @Entity(tableName = "school_settings")

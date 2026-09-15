@@ -37,7 +37,8 @@ fun NotificationCenterSheet(
     onDismissRequest: () -> Unit,
     onMarkRead: (Long) -> Unit,
     onMarkAllRead: () -> Unit,
-    onClearAll: () -> Unit
+    onClearAll: () -> Unit,
+    onNotificationClick: (AppNotification) -> Unit = {}
 ) {
     var showUnreadOnly by remember { mutableStateOf(false) }
 
@@ -193,7 +194,10 @@ fun NotificationCenterSheet(
                         itemsIndexed(filteredList, key = { index, item -> "notif_${item.id}_$index" }) { _, item ->
                             NotificationCardItem(
                                 notification = item,
-                                onMarkRead = { onMarkRead(item.id) }
+                                onClick = {
+                                    onMarkRead(item.id)
+                                    onNotificationClick(item)
+                                }
                             )
                         }
                     }
@@ -206,7 +210,7 @@ fun NotificationCenterSheet(
 @Composable
 private fun NotificationCardItem(
     notification: AppNotification,
-    onMarkRead: () -> Unit
+    onClick: () -> Unit
 ) {
     val iconAndColor = remember(notification.type) {
         when (notification.type) {
@@ -227,7 +231,7 @@ private fun NotificationCardItem(
                 color = if (!notification.isRead) iconAndColor.second else MaterialTheme.colorScheme.outlineVariant,
                 shape = RoundedCornerShape(12.dp)
             )
-            .clickable { onMarkRead() }
+            .clickable { onClick() }
             .testTag("notification_item_${notification.id}"),
         color = if (!notification.isRead) iconAndColor.second.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface
     ) {
@@ -294,12 +298,28 @@ private fun NotificationCardItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
 
-                    Text(
-                        text = notification.type.replace("_", " "),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = iconAndColor.second
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = iconAndColor.second.copy(alpha = 0.12f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = if (notification.type == "APPROVAL_REQUIRED") "Review Portal ➔" else "Open Portal ➔",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = iconAndColor.second
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -43,7 +43,7 @@ fun LoginScreen(
     val activeUserAccount by viewModel.activeUserAccount.collectAsState()
 
     var selectedPortal by remember { mutableStateOf("PROPRIETOR") } // "PROPRIETOR", "TEACHER", "GUARDIAN"
-    var emailInput by remember { mutableStateOf(activeUserAccount?.email ?: "proprietor@akomaschools.edu.gh") }
+    var emailInput by remember { mutableStateOf(activeUserAccount?.email ?: "proprietor@sttalafor.edu.gh") }
     var passwordInput by remember { mutableStateOf("••••••••") }
     var fullNameInput by remember { mutableStateOf(activeUserAccount?.fullName ?: "Dr. Kwame Addo") }
     var phoneInput by remember { mutableStateOf(activeUserAccount?.phone ?: "0244123456") }
@@ -82,7 +82,7 @@ fun LoginScreen(
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = schoolNameInput.ifBlank { "Akoma Primary & JHS" },
+                text = schoolNameInput.ifBlank { "St. Talafor Primary & JHS" },
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.ExtraBold,
                 color = GhanaNavyPrimary,
@@ -125,7 +125,7 @@ fun LoginScreen(
                         onClick = {
                             selectedPortal = "PROPRIETOR"
                             if (emailInput.contains("teacher") || emailInput.contains("guardian")) {
-                                emailInput = "proprietor@akomaschools.edu.gh"
+                                emailInput = "proprietor@sttalafor.edu.gh"
                                 fullNameInput = "Dr. Kwame Addo"
                             }
                         },
@@ -141,7 +141,7 @@ fun LoginScreen(
                         isSelected = selectedPortal == "TEACHER",
                         onClick = {
                             selectedPortal = "TEACHER"
-                            emailInput = "teacher.mensah@akomaschools.edu.gh"
+                            emailInput = "teacher.mensah@sttalafor.edu.gh"
                             fullNameInput = "Mr. Emmanuel Mensah"
                         },
                         modifier = Modifier
@@ -376,10 +376,10 @@ fun LoginScreen(
                         onClick = {
                             viewModel.signUpOrLoginUser(
                                 fullName = "Dr. Kwame Addo",
-                                email = "proprietor@akomaschools.edu.gh",
+                                email = "proprietor@sttalafor.edu.gh",
                                 phone = "0244123456",
                                 role = "PROPRIETOR",
-                                schoolNameInput = "Akoma Primary & JHS"
+                                schoolNameInput = "St. Talafor Primary & JHS"
                             )
                             onLoginSuccess()
                         },
@@ -392,10 +392,10 @@ fun LoginScreen(
                         onClick = {
                             viewModel.signUpOrLoginUser(
                                 fullName = "Mr. Emmanuel Mensah",
-                                email = "teacher.mensah@akomaschools.edu.gh",
+                                email = "teacher.mensah@sttalafor.edu.gh",
                                 phone = "0244888999",
                                 role = "TEACHER",
-                                schoolNameInput = "Akoma Primary & JHS"
+                                schoolNameInput = "St. Talafor Primary & JHS"
                             )
                             onLoginSuccess()
                         },
@@ -411,7 +411,7 @@ fun LoginScreen(
                                 email = "parent.serwaa@gmail.com",
                                 phone = "0244111222",
                                 role = "GUARDIAN",
-                                schoolNameInput = "Akoma Primary & JHS"
+                                schoolNameInput = "St. Talafor Primary & JHS"
                             )
                             onLoginSuccess()
                         },

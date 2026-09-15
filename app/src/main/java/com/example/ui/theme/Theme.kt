@@ -44,7 +44,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun AkomaSchoolTheme(
+fun StTalaforSchoolTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false, // Set false to preserve our custom Ghanaian school palette
     content: @Composable () -> Unit

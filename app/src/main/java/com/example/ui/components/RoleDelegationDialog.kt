@@ -2,8 +2,8 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -160,69 +160,60 @@ fun RoleDelegationDialog(
                             HorizontalDivider()
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            LazyColumn(
-                                modifier = Modifier.heightIn(max = 280.dp),
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 280.dp)
+                                    .verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                item {
-                                    PermissionSwitchRow(
-                                        title = "Edit & Submit Grades",
-                                        description = "Allow entering quarterly student assessment marks",
-                                        isChecked = staff.isCanEditGrades,
-                                        onCheckedChange = { onTogglePermission(staff, "EDIT_GRADES") },
-                                        testTag = "toggle_edit_grades"
-                                    )
-                                }
+                                PermissionSwitchRow(
+                                    title = "Edit & Submit Grades",
+                                    description = "Allow entering quarterly student assessment marks",
+                                    isChecked = staff.isCanEditGrades,
+                                    onCheckedChange = { onTogglePermission(staff, "EDIT_GRADES") },
+                                    testTag = "toggle_edit_grades"
+                                )
 
-                                item {
-                                    PermissionSwitchRow(
-                                        title = "Mark Attendance Register",
-                                        description = "Record daily & weekly classroom attendance",
-                                        isChecked = staff.isCanMarkAttendance,
-                                        onCheckedChange = { onTogglePermission(staff, "MARK_ATTENDANCE") },
-                                        testTag = "toggle_mark_attendance"
-                                    )
-                                }
+                                PermissionSwitchRow(
+                                    title = "Mark Attendance Register",
+                                    description = "Record daily & weekly classroom attendance",
+                                    isChecked = staff.isCanMarkAttendance,
+                                    onCheckedChange = { onTogglePermission(staff, "MARK_ATTENDANCE") },
+                                    testTag = "toggle_mark_attendance"
+                                )
 
-                                item {
-                                    PermissionSwitchRow(
-                                        title = "Approve Fee Overrides",
-                                        description = "Grant fee waivers or payment grace periods",
-                                        isChecked = staff.isCanApproveOverrides,
-                                        onCheckedChange = { onTogglePermission(staff, "APPROVE_OVERRIDES") },
-                                        testTag = "toggle_approve_overrides"
-                                    )
-                                }
+                                PermissionSwitchRow(
+                                    title = "Approve Fee Overrides",
+                                    description = "Grant fee waivers or payment grace periods",
+                                    isChecked = staff.isCanApproveOverrides,
+                                    onCheckedChange = { onTogglePermission(staff, "APPROVE_OVERRIDES") },
+                                    testTag = "toggle_approve_overrides"
+                                )
 
-                                item {
-                                    PermissionSwitchRow(
-                                        title = "Access Financial Records",
-                                        description = "View school bursar ledger and fee reports",
-                                        isChecked = staff.isCanAccessFinancials,
-                                        onCheckedChange = { onTogglePermission(staff, "ACCESS_FINANCIALS") },
-                                        testTag = "toggle_access_financials"
-                                    )
-                                }
+                                PermissionSwitchRow(
+                                    title = "Access Financial Records",
+                                    description = "View school bursar ledger and fee reports",
+                                    isChecked = staff.isCanAccessFinancials,
+                                    onCheckedChange = { onTogglePermission(staff, "ACCESS_FINANCIALS") },
+                                    testTag = "toggle_access_financials"
+                                )
 
-                                item {
-                                    PermissionSwitchRow(
-                                        title = "SMS & WhatsApp Broadcasts",
-                                        description = "Send announcements to parent groups",
-                                        isChecked = staff.isCanSendSms,
-                                        onCheckedChange = { onTogglePermission(staff, "SEND_SMS") },
-                                        testTag = "toggle_send_sms"
-                                    )
-                                }
+                                PermissionSwitchRow(
+                                    title = "SMS & WhatsApp Broadcasts",
+                                    description = "Send announcements to parent groups",
+                                    isChecked = staff.isCanSendSms,
+                                    onCheckedChange = { onTogglePermission(staff, "SEND_SMS") },
+                                    testTag = "toggle_send_sms"
+                                )
 
-                                item {
-                                    PermissionSwitchRow(
-                                        title = "Manage Staff Roles",
-                                        description = "Proprietor privilege: Grant admin access",
-                                        isChecked = staff.isCanManageRoles,
-                                        onCheckedChange = { onTogglePermission(staff, "MANAGE_ROLES") },
-                                        testTag = "toggle_manage_roles"
-                                    )
-                                }
+                                PermissionSwitchRow(
+                                    title = "Manage Staff Roles",
+                                    description = "Proprietor privilege: Grant admin access",
+                                    isChecked = staff.isCanManageRoles,
+                                    onCheckedChange = { onTogglePermission(staff, "MANAGE_ROLES") },
+                                    testTag = "toggle_manage_roles"
+                                )
                             }
                         }
                     }

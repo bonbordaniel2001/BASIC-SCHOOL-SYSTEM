@@ -33,6 +33,13 @@ import com.example.data.model.AlumniProfile
 import com.example.data.model.AlumniChatMessage
 import com.example.data.model.SchoolPerformanceMetric
 import com.example.data.model.AlumniAspirant
+import com.example.ui.components.ALUMNI_STICKER_PACK
+import com.example.ui.components.AlumniMediaUploadMenuSheet
+import com.example.ui.components.AlumniSticker
+import com.example.ui.components.CameraCaptureDialog
+import com.example.ui.components.DeviceMediaPickerDialog
+import com.example.ui.components.EmojiAndStickerTray
+import com.example.ui.components.VoiceRecorderDialog
 import com.example.ui.theme.GhanaEmeraldGreen
 import com.example.ui.theme.GhanaGoldAccent
 import com.example.ui.theme.GhanaGoldContainer
@@ -66,12 +73,16 @@ fun AlumniScreen(
     var verifyEmailInput by remember { mutableStateOf("daniel.akuffo@alumni.edu.gh") }
     var verificationErrorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Chat State
+    // Chat & Rich Media Suite State
     var chatInputText by remember { mutableStateOf("") }
-    var showMediaUploadDialog by remember { mutableStateOf(false) }
-    var selectedMediaType by remember { mutableStateOf("IMAGE") }
-    var mediaUrlInput by remember { mutableStateOf("https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=600") }
-    var fileNameInput by remember { mutableStateOf("Akoma_Reunion_Photo.jpg") }
+    var showMediaMenuSheet by remember { mutableStateOf(false) }
+    var showCameraDialog by remember { mutableStateOf(false) }
+    var activeCameraMode by remember { mutableStateOf("PHOTO") } // "PHOTO" or "VIDEO"
+    var showVoiceRecorderDialog by remember { mutableStateOf(false) }
+    var showDeviceMediaPicker by remember { mutableStateOf(false) }
+    var deviceMediaCategory by remember { mutableStateOf("IMAGE") } // "IMAGE", "AUDIO", "DOCUMENT"
+    var showEmojiTray by remember { mutableStateOf(false) }
+    var previewingMediaMessage by remember { mutableStateOf<AlumniChatMessage?>(null) }
 
     // Batch Import State
     var showBatchImportDialog by remember { mutableStateOf(false) }
@@ -210,7 +221,32 @@ fun AlumniScreen(
                             chatInputText = ""
                         }
                     },
-                    onOpenMediaUpload = { showMediaUploadDialog = true }
+                    onOpenMediaMenu = { showMediaMenuSheet = true },
+                    onToggleEmojiTray = { showEmojiTray = !showEmojiTray },
+                    showEmojiTray = showEmojiTray,
+                    onSelectEmoji = { emoji -> chatInputText += emoji },
+                    onSendSticker = { sticker ->
+                        val senderName = activeUserSession?.fullName ?: "Anonymous Alumni"
+                        val senderRole = if (activeUserSession?.isAlumniAdmin == true) "ALUMNI_ADMIN" else "ALUMNI_MEMBER"
+                        viewModel.sendAlumniChatMessage(
+                            senderName = senderName,
+                            senderRole = senderRole,
+                            text = "${sticker.emoji} ${sticker.title} - ${sticker.subtitle}",
+                            mediaType = "STICKER",
+                            fileName = sticker.title
+                        )
+                        showEmojiTray = false
+                    },
+                    onQuickCamera = {
+                        activeCameraMode = "PHOTO"
+                        showCameraDialog = true
+                    },
+                    onQuickVoice = {
+                        showVoiceRecorderDialog = true
+                    },
+                    onPreviewMedia = { msg ->
+                        previewingMediaMessage = msg
+                    }
                 )
 
                 2 -> SchoolPerformanceTab(
@@ -337,73 +373,213 @@ fun AlumniScreen(
         )
     }
 
-    // --- MEDIA UPLOAD DIALOG ---
-    if (showMediaUploadDialog) {
-        AlertDialog(
-            onDismissRequest = { showMediaUploadDialog = false },
-            title = { Text("Share Media or Records in Group", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Select media type and upload to the Alumni Group Hub.", fontSize = 12.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = selectedMediaType == "IMAGE",
-                            onClick = { selectedMediaType = "IMAGE" },
-                            label = { Text("Photo") }
-                        )
-                        FilterChip(
-                            selected = selectedMediaType == "VIDEO",
-                            onClick = { selectedMediaType = "VIDEO" },
-                            label = { Text("Video") }
-                        )
-                        FilterChip(
-                            selected = selectedMediaType == "DOCUMENT",
-                            onClick = { selectedMediaType = "DOCUMENT" },
-                            label = { Text("Record/PDF") }
-                        )
+    // --- RICH MEDIA UPLOAD MENU & ACTIONS ---
+    if (showMediaMenuSheet) {
+        AlumniMediaUploadMenuSheet(
+            onSelectOption = { option ->
+                when (option) {
+                    "CAMERA_PHOTO" -> {
+                        activeCameraMode = "PHOTO"
+                        showCameraDialog = true
                     }
+                    "CAMERA_VIDEO" -> {
+                        activeCameraMode = "VIDEO"
+                        showCameraDialog = true
+                    }
+                    "DEVICE_IMAGE" -> {
+                        deviceMediaCategory = "IMAGE"
+                        showDeviceMediaPicker = true
+                    }
+                    "DEVICE_AUDIO" -> {
+                        deviceMediaCategory = "AUDIO"
+                        showDeviceMediaPicker = true
+                    }
+                    "VOICE_RECORD" -> {
+                        showVoiceRecorderDialog = true
+                    }
+                    "STICKER" -> {
+                        showEmojiTray = true
+                    }
+                    "DOCUMENT" -> {
+                        deviceMediaCategory = "DOCUMENT"
+                        showDeviceMediaPicker = true
+                    }
+                }
+            },
+            onDismiss = { showMediaMenuSheet = false }
+        )
+    }
 
-                    OutlinedTextField(
-                        value = fileNameInput,
-                        onValueChange = { fileNameInput = it },
-                        label = { Text("File Title / Document Record Name") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+    if (showCameraDialog) {
+        CameraCaptureDialog(
+            initialMode = activeCameraMode,
+            onCapturePhoto = { fileName, caption ->
+                val senderName = activeUserSession?.fullName ?: "Anonymous Alumni"
+                val senderRole = if (activeUserSession?.isAlumniAdmin == true) "ALUMNI_ADMIN" else "ALUMNI_MEMBER"
+                viewModel.sendAlumniChatMessage(
+                    senderName = senderName,
+                    senderRole = senderRole,
+                    text = caption,
+                    mediaType = "IMAGE",
+                    mediaUrl = "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=600",
+                    fileName = fileName
+                )
+                Toast.makeText(context, "Photo uploaded to alumni chat!", Toast.LENGTH_SHORT).show()
+            },
+            onRecordVideo = { fileName, caption, durationSeconds ->
+                val senderName = activeUserSession?.fullName ?: "Anonymous Alumni"
+                val senderRole = if (activeUserSession?.isAlumniAdmin == true) "ALUMNI_ADMIN" else "ALUMNI_MEMBER"
+                viewModel.sendAlumniChatMessage(
+                    senderName = senderName,
+                    senderRole = senderRole,
+                    text = caption,
+                    mediaType = "VIDEO",
+                    mediaUrl = "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
+                    fileName = "$fileName (${durationSeconds}s)"
+                )
+                Toast.makeText(context, "Video clip uploaded to alumni chat!", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showCameraDialog = false }
+        )
+    }
 
-                    OutlinedTextField(
-                        value = mediaUrlInput,
-                        onValueChange = { mediaUrlInput = it },
-                        label = { Text("Media Storage URL / Path") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+    if (showVoiceRecorderDialog) {
+        VoiceRecorderDialog(
+            onSendVoiceNote = { fileName, durationText ->
+                val senderName = activeUserSession?.fullName ?: "Anonymous Alumni"
+                val senderRole = if (activeUserSession?.isAlumniAdmin == true) "ALUMNI_ADMIN" else "ALUMNI_MEMBER"
+                viewModel.sendAlumniChatMessage(
+                    senderName = senderName,
+                    senderRole = senderRole,
+                    text = "🎙️ Voice Note ($durationText)",
+                    mediaType = "VOICE_NOTE",
+                    mediaUrl = "https://audio.example.com/voice.m4a",
+                    fileName = fileName
+                )
+                Toast.makeText(context, "Voice note sent to alumni feed!", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showVoiceRecorderDialog = false }
+        )
+    }
+
+    if (showDeviceMediaPicker) {
+        DeviceMediaPickerDialog(
+            mediaCategory = deviceMediaCategory,
+            onMediaSelected = { fileName, mediaUrl, caption ->
+                val senderName = activeUserSession?.fullName ?: "Anonymous Alumni"
+                val senderRole = if (activeUserSession?.isAlumniAdmin == true) "ALUMNI_ADMIN" else "ALUMNI_MEMBER"
+                viewModel.sendAlumniChatMessage(
+                    senderName = senderName,
+                    senderRole = senderRole,
+                    text = caption,
+                    mediaType = deviceMediaCategory,
+                    mediaUrl = mediaUrl,
+                    fileName = fileName
+                )
+                Toast.makeText(context, "$deviceMediaCategory sent to alumni chat!", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showDeviceMediaPicker = false }
+        )
+    }
+
+    // Media Viewer Dialog for chat attachments
+    previewingMediaMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { previewingMediaMessage = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(
+                        imageVector = when (msg.mediaType) {
+                            "IMAGE" -> Icons.Default.Image
+                            "VIDEO" -> Icons.Default.Videocam
+                            "AUDIO", "VOICE_NOTE" -> Icons.Default.Audiotrack
+                            else -> Icons.Default.Description
+                        },
+                        contentDescription = null,
+                        tint = GhanaNavyPrimary
                     )
+                    Text(msg.fileName.ifBlank { msg.mediaType }, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    when (msg.mediaType) {
+                        "IMAGE" -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(GhanaNavyPrimary.copy(alpha = 0.1f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.Default.Image, contentDescription = null, tint = GhanaNavyPrimary, modifier = Modifier.size(54.dp))
+                                    Text("High-Resolution Alumni Photo", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GhanaNavyPrimary)
+                                    Text(msg.fileName, fontSize = 11.sp, color = Color.Gray)
+                                }
+                            }
+                        }
+                        "VIDEO" -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.Black),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.Default.PlayCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(60.dp))
+                                    Text("Video Playback Simulation (1080p)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(msg.fileName, fontSize = 11.sp, color = Color.LightGray)
+                                }
+                            }
+                        }
+                        "VOICE_NOTE", "AUDIO" -> {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = GhanaNavyPrimary.copy(alpha = 0.08f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier.size(44.dp).clip(CircleShape).background(GhanaNavyPrimary),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White)
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(msg.fileName.ifBlank { "Voice Note Recording" }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text("Audio Playing • St. Talafor Media Engine", fontSize = 10.sp, color = Color.Gray)
+                                    }
+                                }
+                            }
+                        }
+                        else -> {
+                            Text("Document Record: ${msg.fileName}\nFormat: PDF / Digital Archive", fontSize = 12.sp)
+                        }
+                    }
+                    Text("Shared by ${msg.senderName} (${msg.senderRole}) • ${msg.timestampString}", fontSize = 11.sp, color = Color.Gray)
+                    if (msg.messageText.isNotBlank()) {
+                        Text("Caption: \"${msg.messageText}\"", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
                 }
             },
             confirmButton = {
                 Button(
-                    onClick = {
-                        val senderName = activeUserSession?.fullName ?: "Anonymous Alumni"
-                        val senderRole = if (activeUserSession?.isAlumniAdmin == true) "ALUMNI_ADMIN" else "ALUMNI_MEMBER"
-                        viewModel.sendAlumniChatMessage(
-                            senderName = senderName,
-                            senderRole = senderRole,
-                            text = "Shared $selectedMediaType: $fileNameInput",
-                            mediaType = selectedMediaType,
-                            mediaUrl = mediaUrlInput,
-                            fileName = fileNameInput
-                        )
-                        showMediaUploadDialog = false
-                        Toast.makeText(context, "$selectedMediaType shared in alumni feed!", Toast.LENGTH_SHORT).show()
-                    },
+                    onClick = { previewingMediaMessage = null },
                     colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary)
                 ) {
-                    Text("Share Media")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showMediaUploadDialog = false }) {
-                    Text("Cancel")
+                    Text("Close Preview")
                 }
             }
         )
@@ -682,7 +858,14 @@ fun CommunityChatAndMediaTab(
     chatText: String,
     onChatTextChange: (String) -> Unit,
     onSendMessage: () -> Unit,
-    onOpenMediaUpload: () -> Unit
+    onOpenMediaMenu: () -> Unit,
+    onToggleEmojiTray: () -> Unit,
+    showEmojiTray: Boolean,
+    onSelectEmoji: (String) -> Unit,
+    onSendSticker: (AlumniSticker) -> Unit,
+    onQuickCamera: () -> Unit,
+    onQuickVoice: () -> Unit,
+    onPreviewMedia: (AlumniChatMessage) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -730,34 +913,121 @@ fun CommunityChatAndMediaTab(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(msg.senderName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GhanaNavyPrimary)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(msg.senderName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GhanaNavyPrimary)
+                                if (msg.senderRole == "ALUMNI_ADMIN") {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = GhanaGoldAccent.copy(alpha = 0.3f)
+                                    ) {
+                                        Text("ADMIN", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = GhanaNavyPrimary, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                    }
+                                }
+                            }
                             Text(msg.timestampString, fontSize = 10.sp, color = Color.Gray)
                         }
 
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(msg.messageText, fontSize = 13.sp)
 
-                        if (msg.mediaType != "TEXT" && msg.fileName.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(6.dp))
+                        // Message Text or Sticker Display
+                        if (msg.mediaType == "STICKER") {
                             Surface(
+                                shape = RoundedCornerShape(12.dp),
                                 color = GhanaNavyPrimary.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(8.dp)
+                                border = BorderStroke(1.dp, GhanaGoldAccent),
+                                modifier = Modifier
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(12.dp))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
+                                    Text(msg.messageText.take(2), fontSize = 28.sp)
+                                    Column {
+                                        Text(msg.fileName.ifBlank { "St. Talafor Pride" }, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GhanaNavyPrimary)
+                                        Text(msg.messageText.drop(2).trim(), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        } else if (msg.messageText.isNotBlank()) {
+                            Text(msg.messageText, fontSize = 13.sp)
+                        }
+
+                        // Rich Media Attachments (Image, Video, Voice Note, Audio, Document)
+                        if (msg.mediaType != "TEXT" && msg.mediaType != "STICKER" && msg.fileName.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Surface(
+                                color = when (msg.mediaType) {
+                                    "IMAGE" -> Color(0xFF0284C7).copy(alpha = 0.12f)
+                                    "VIDEO" -> Color(0xFFDC2626).copy(alpha = 0.12f)
+                                    "VOICE_NOTE", "AUDIO" -> Color(0xFFEA580C).copy(alpha = 0.12f)
+                                    else -> GhanaNavyPrimary.copy(alpha = 0.1f)
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onPreviewMedia(msg) }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                when (msg.mediaType) {
+                                                    "IMAGE" -> Color(0xFF0284C7)
+                                                    "VIDEO" -> Color(0xFFDC2626)
+                                                    "VOICE_NOTE", "AUDIO" -> Color(0xFFEA580C)
+                                                    else -> GhanaNavyPrimary
+                                                }
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = when (msg.mediaType) {
+                                                "IMAGE" -> Icons.Default.Image
+                                                "VIDEO" -> Icons.Default.PlayArrow
+                                                "VOICE_NOTE", "AUDIO" -> Icons.Default.Mic
+                                                else -> Icons.Default.Description
+                                            },
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = msg.fileName,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = GhanaNavyPrimary
+                                        )
+                                        Text(
+                                            text = when (msg.mediaType) {
+                                                "IMAGE" -> "Photo Snapshot • Tap to preview"
+                                                "VIDEO" -> "Video Recording • Tap to play"
+                                                "VOICE_NOTE" -> "Voice Message • Tap to listen"
+                                                "AUDIO" -> "Device Audio • Tap to listen"
+                                                else -> "Document • Tap to view"
+                                            },
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
                                     Icon(
-                                        imageVector = when (msg.mediaType) {
-                                            "IMAGE" -> Icons.Default.Image
-                                            "VIDEO" -> Icons.Default.Videocam
-                                            else -> Icons.Default.Description
-                                        },
-                                        contentDescription = null,
-                                        tint = GhanaNavyPrimary
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = "View",
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(18.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("${msg.mediaType}: ${msg.fileName}", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = GhanaNavyPrimary)
                                 }
                             }
                         }
@@ -768,35 +1038,100 @@ fun CommunityChatAndMediaTab(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Chat Input Bar
+        // Chat Input Bar with Media, Emojis, Camera, Mic
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
+            // Emojis & Stickers Toggle
             IconButton(
-                onClick = onOpenMediaUpload,
-                colors = IconButtonDefaults.iconButtonColors(containerColor = GhanaNavyPrimary.copy(alpha = 0.1f))
+                onClick = onToggleEmojiTray,
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = if (showEmojiTray) GhanaGoldAccent.copy(alpha = 0.3f) else GhanaNavyPrimary.copy(alpha = 0.08f)
+                ),
+                modifier = Modifier.size(40.dp).testTag("chat_emoji_toggle_btn")
             ) {
-                Icon(Icons.Default.AttachFile, contentDescription = "Attach Media", tint = GhanaNavyPrimary)
+                Icon(
+                    imageVector = Icons.Default.SentimentSatisfiedAlt,
+                    contentDescription = "Emojis & Stickers",
+                    tint = GhanaNavyPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
             }
 
+            // Plus / Media Upload Menu Button
+            IconButton(
+                onClick = onOpenMediaMenu,
+                colors = IconButtonDefaults.iconButtonColors(containerColor = GhanaNavyPrimary.copy(alpha = 0.08f)),
+                modifier = Modifier.size(40.dp).testTag("chat_media_menu_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AddCircle,
+                    contentDescription = "Add Media",
+                    tint = GhanaNavyPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // Quick Camera Button
+            IconButton(
+                onClick = onQuickCamera,
+                colors = IconButtonDefaults.iconButtonColors(containerColor = GhanaNavyPrimary.copy(alpha = 0.08f)),
+                modifier = Modifier.size(40.dp).testTag("chat_quick_camera_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PhotoCamera,
+                    contentDescription = "Camera",
+                    tint = GhanaNavyPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // Text Input Field
             OutlinedTextField(
                 value = chatText,
                 onValueChange = onChatTextChange,
-                placeholder = { Text("Message alumni network...") },
+                placeholder = { Text("Message alumni network...", fontSize = 12.sp) },
                 modifier = Modifier
                     .weight(1f)
                     .testTag("chat_input_field"),
-                singleLine = true
+                singleLine = true,
+                shape = RoundedCornerShape(20.dp)
             )
 
-            IconButton(
-                onClick = onSendMessage,
-                colors = IconButtonDefaults.iconButtonColors(containerColor = GhanaNavyPrimary)
-            ) {
-                Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White)
+            // Mic or Send Action Button
+            if (chatText.isBlank()) {
+                IconButton(
+                    onClick = onQuickVoice,
+                    colors = IconButtonDefaults.iconButtonColors(containerColor = Color(0xFFEA580C)),
+                    modifier = Modifier.size(42.dp).testTag("chat_quick_voice_btn")
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = "Record Voice", tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+            } else {
+                IconButton(
+                    onClick = onSendMessage,
+                    colors = IconButtonDefaults.iconButtonColors(containerColor = GhanaNavyPrimary),
+                    modifier = Modifier.size(42.dp).testTag("chat_send_button")
+                ) {
+                    Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(20.dp))
+                }
             }
+        }
+
+        // Expandable Emoji & Sticker Drawer
+        AnimatedVisibility(
+            visible = showEmojiTray,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Spacer(modifier = Modifier.height(8.dp))
+            EmojiAndStickerTray(
+                onSelectEmoji = onSelectEmoji,
+                onSendSticker = onSendSticker,
+                onClose = onToggleEmojiTray
+            )
         }
     }
 }

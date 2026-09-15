@@ -92,6 +92,45 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     val allClassAssignments: StateFlow<List<ClassAssignment>> = repository.allClassAssignments
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allStudentAddRequests: StateFlow<List<StudentAddRequest>> = repository.allStudentAddRequests
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allPromotionDemotionRequests: StateFlow<List<PromotionDemotionRequest>> = repository.allPromotionDemotionRequests
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _proprietorTargetSection = MutableStateFlow<String?>(null)
+    val proprietorTargetSection: StateFlow<String?> = _proprietorTargetSection.asStateFlow()
+
+    fun setProprietorTargetSection(section: String?) {
+        _proprietorTargetSection.value = section
+    }
+
+    fun clearProprietorTargetSection() {
+        _proprietorTargetSection.value = null
+    }
+
+    private val _teacherTargetTab = MutableStateFlow<Int?>(null)
+    val teacherTargetTab: StateFlow<Int?> = _teacherTargetTab.asStateFlow()
+
+    fun setTeacherTargetTab(tab: Int?) {
+        _teacherTargetTab.value = tab
+    }
+
+    fun clearTeacherTargetTab() {
+        _teacherTargetTab.value = null
+    }
+
+    private val _guardianTargetTab = MutableStateFlow<Int?>(null)
+    val guardianTargetTab: StateFlow<Int?> = _guardianTargetTab.asStateFlow()
+
+    fun setGuardianTargetTab(tab: Int?) {
+        _guardianTargetTab.value = tab
+    }
+
+    fun clearGuardianTargetTab() {
+        _guardianTargetTab.value = null
+    }
+
     // --- Alumni Network StateFlows ---
     val allAlumniProfiles: StateFlow<List<AlumniProfile>> = alumniRepository.allAlumniProfiles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -310,8 +349,8 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val schoolName: StateFlow<String> = repository.schoolSettings
-        .map { it?.schoolName ?: "Akoma Primary & JHS" }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Akoma Primary & JHS")
+        .map { it?.schoolName ?: "St. Talafor Primary & JHS" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "St. Talafor Primary & JHS")
 
     // --- Active View Mode ---
     private val _activeViewMode = MutableStateFlow(ViewMode.HOME)
@@ -468,6 +507,221 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun navigateToAppropriatePortal(notification: AppNotification) {
+        viewModelScope.launch {
+            repository.markNotificationRead(notification.id)
+            _showNotificationCenter.value = false
+
+            val titleLower = notification.title.lowercase()
+            val messageLower = notification.message.lowercase()
+            val textContent = "$titleLower $messageLower"
+
+            when {
+                // Proprietor or Approval workflow notifications
+                notification.type == "APPROVAL_REQUIRED" || notification.recipientRole == "PROPRIETOR" -> {
+                    when {
+                        textContent.contains("admission") || textContent.contains("promotion") || 
+                        textContent.contains("demotion") || textContent.contains("loan") || 
+                        textContent.contains("approval") || textContent.contains("permission") ||
+                        notification.type == "APPROVAL_REQUIRED" -> {
+                            _proprietorTargetSection.value = "APPROVALS"
+                        }
+                        textContent.contains("fee") || textContent.contains("payment") || textContent.contains("momo") -> {
+                            _proprietorTargetSection.value = "FEES"
+                        }
+                        textContent.contains("staff") || textContent.contains("salary") || textContent.contains("payroll") -> {
+                            _proprietorTargetSection.value = "STAFF"
+                        }
+                        textContent.contains("library") || textContent.contains("textbook") || textContent.contains("syllabus") -> {
+                            _proprietorTargetSection.value = "LIBRARY"
+                        }
+                        textContent.contains("assignment") || textContent.contains("homework") -> {
+                            _proprietorTargetSection.value = "ASSIGNMENTS"
+                        }
+                        else -> {
+                            _proprietorTargetSection.value = "APPROVALS"
+                        }
+                    }
+                    setViewMode(ViewMode.PROPRIETOR)
+                }
+
+                // Teacher notifications
+                notification.recipientRole == "TEACHER" -> {
+                    when {
+                        textContent.contains("grade") || notification.type == "GRADE_POSTED" -> {
+                            _teacherTargetTab.value = 1 // Gradebook
+                        }
+                        textContent.contains("lesson") || textContent.contains("plan") -> {
+                            _teacherTargetTab.value = 2 // Lesson Plans
+                        }
+                        textContent.contains("timetable") || textContent.contains("schedule") -> {
+                            _teacherTargetTab.value = 3 // Timetable
+                        }
+                        textContent.contains("loan") || textContent.contains("advance") -> {
+                            _teacherTargetTab.value = 4 // Loan Request
+                        }
+                        textContent.contains("message") || textContent.contains("parent") || textContent.contains("guardian") -> {
+                            _teacherTargetTab.value = 5 // Parent Messaging
+                        }
+                        textContent.contains("receipt") || textContent.contains("payslip") || textContent.contains("salary") -> {
+                            _teacherTargetTab.value = 6 // Pay Receipts
+                        }
+                        textContent.contains("library") || textContent.contains("resource") || textContent.contains("textbook") -> {
+                            _teacherTargetTab.value = 7 // Digital Library
+                        }
+                        textContent.contains("assignment") || textContent.contains("homework") -> {
+                            _teacherTargetTab.value = 8 // Class Assignments
+                        }
+                        else -> {
+                            _teacherTargetTab.value = 0 // Attendance / Daily Roster
+                        }
+                    }
+                    setViewMode(ViewMode.TEACHER)
+                }
+
+                // Guardian notifications
+                notification.recipientRole == "GUARDIAN" || notification.type in listOf("FEE_DUE", "PAYMENT_SUCCESS") -> {
+                    when {
+                        notification.type in listOf("FEE_DUE", "PAYMENT_SUCCESS") || textContent.contains("fee") || textContent.contains("payment") || textContent.contains("momo") || textContent.contains("balance") -> {
+                            _guardianTargetTab.value = 0 // Fees & Financials
+                        }
+                        notification.type == "ATTENDANCE_ISSUE" || textContent.contains("attendance") || textContent.contains("absent") || textContent.contains("present") -> {
+                            _guardianTargetTab.value = 1 // Attendance
+                        }
+                        notification.type == "GRADE_POSTED" || textContent.contains("grade") || textContent.contains("report") || textContent.contains("exam") || textContent.contains("score") -> {
+                            _guardianTargetTab.value = 2 // Grades
+                        }
+                        textContent.contains("timetable") || textContent.contains("schedule") -> {
+                            _guardianTargetTab.value = 3 // Timetable
+                        }
+                        textContent.contains("message") || textContent.contains("teacher") || textContent.contains("inquiry") -> {
+                            _guardianTargetTab.value = 4 // Teacher Messaging
+                        }
+                        textContent.contains("book") || textContent.contains("library") || textContent.contains("reading") -> {
+                            _guardianTargetTab.value = 5 // Ward Textbooks
+                        }
+                        textContent.contains("assignment") || textContent.contains("homework") || textContent.contains("project") -> {
+                            _guardianTargetTab.value = 6 // Ward Assignments
+                        }
+                        else -> {
+                            _guardianTargetTab.value = 0
+                        }
+                    }
+                    setViewMode(ViewMode.GUARDIAN)
+                }
+
+                notification.recipientRole == "ALUMNI" || notification.type == "ALUMNI_UPDATE" || textContent.contains("alumni") -> {
+                    setViewMode(ViewMode.ALUMNI)
+                }
+
+                else -> {
+                    setViewMode(ViewMode.HOME)
+                }
+            }
+        }
+    }
+
+    // --- Student Admission & Promotion Approvals ---
+    fun submitStudentAddRequest(
+        studentName: String,
+        className: String,
+        guardianName: String,
+        guardianPhone: String,
+        estimatedFeesGhc: Double,
+        reason: String,
+        teacherName: String = "Class Teacher"
+    ) {
+        viewModelScope.launch {
+            showLoading("Submitting admission request to Proprietor...")
+            val req = StudentAddRequest(
+                studentName = studentName.trim(),
+                className = className.trim(),
+                guardianName = guardianName.trim(),
+                guardianPhone = guardianPhone.trim(),
+                estimatedFeesGhc = estimatedFeesGhc,
+                reason = reason.trim(),
+                requestedByTeacher = teacherName,
+                status = "PENDING",
+                requestDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+            )
+            repository.submitStudentAddRequest(req)
+            hideLoading()
+            Toast.makeText(context, "Admission request submitted for Proprietor approval!", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun approveStudentAddRequest(request: StudentAddRequest) {
+        viewModelScope.launch {
+            showLoading("Enrolling student...")
+            repository.approveStudentAddRequest(request)
+            hideLoading()
+            Toast.makeText(context, "Student '${request.studentName}' approved and enrolled!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun rejectStudentAddRequest(request: StudentAddRequest, reason: String = "") {
+        viewModelScope.launch {
+            showLoading("Declining request...")
+            repository.rejectStudentAddRequest(request, reason)
+            hideLoading()
+            Toast.makeText(context, "Admission request declined.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun submitTeacherPromotionDemotionRequest(
+        studentId: Long?,
+        studentName: String?,
+        currentClass: String,
+        targetClass: String,
+        isDemotion: Boolean,
+        isClassWide: Boolean,
+        reason: String,
+        teacherName: String = "Class Teacher"
+    ) {
+        viewModelScope.launch {
+            val reqType = when {
+                isClassWide && isDemotion -> "CLASS_DEMOTION"
+                isClassWide && !isDemotion -> "CLASS_PROMOTION"
+                !isClassWide && isDemotion -> "STUDENT_DEMOTION"
+                else -> "STUDENT_PROMOTION"
+            }
+            showLoading("Submitting academic request to Proprietor...")
+            val req = PromotionDemotionRequest(
+                requestType = reqType,
+                studentId = if (isClassWide) null else studentId,
+                studentName = if (isClassWide) null else studentName,
+                currentClass = currentClass,
+                targetClass = targetClass,
+                reason = reason.trim(),
+                requestedByTeacher = teacherName,
+                status = "PENDING",
+                requestDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+            )
+            repository.submitPromotionDemotionRequest(req)
+            hideLoading()
+            val actionWord = if (isDemotion) "Demotion" else "Promotion"
+            Toast.makeText(context, "$actionWord request sent to Proprietor for approval!", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun approvePromotionDemotionRequest(request: PromotionDemotionRequest) {
+        viewModelScope.launch {
+            showLoading("Executing approved academic progression...")
+            repository.approvePromotionDemotionRequest(request)
+            hideLoading()
+            Toast.makeText(context, "Permission granted! Academic progression applied.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun rejectPromotionDemotionRequest(request: PromotionDemotionRequest, reason: String = "") {
+        viewModelScope.launch {
+            showLoading("Declining request...")
+            repository.rejectPromotionDemotionRequest(request, reason)
+            hideLoading()
+            Toast.makeText(context, "Request declined.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // --- Data Visualizations State (Proprietor Dashboard) ---
     val monthlyFeeStats: StateFlow<List<MonthlyFeeStat>> = MutableStateFlow(
         listOf(
@@ -565,11 +819,45 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private val _proprietorCode = MutableStateFlow("7788")
+    val proprietorCode: StateFlow<String> = _proprietorCode.asStateFlow()
+
+    fun setProprietorCode(code: String) {
+        _proprietorCode.value = code
+    }
+
     fun payStaffSalary(staffId: Long, amountGhc: Double, paymentMethod: String, notes: String) {
         viewModelScope.launch {
-            repository.payStaffSalary(staffId, amountGhc, paymentMethod, notes)
+            val receipt = repository.payStaffSalary(staffId, amountGhc, paymentMethod, notes)
+            if (receipt != null) {
+                _activeReceipt.value = receipt
+            }
             Toast.makeText(context, "Payment of GH₵ ${String.format("%.2f", amountGhc)} disbursed!", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun payStaffSalaryWithCode(
+        staffId: Long,
+        amountGhc: Double,
+        paymentMethod: String,
+        notes: String,
+        enteredCode: String
+    ): Boolean {
+        if (enteredCode.trim().isBlank()) {
+            Toast.makeText(context, "Please enter your Proprietor Code to authorize payment", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        viewModelScope.launch {
+            showLoading("Verifying Proprietor Code & disbursing payment...")
+            kotlinx.coroutines.delay(500)
+            val receipt = repository.payStaffSalary(staffId, amountGhc, paymentMethod, notes)
+            hideLoading()
+            if (receipt != null) {
+                _activeReceipt.value = receipt
+                Toast.makeText(context, "Proprietor Code verified! GH₵ ${String.format("%.2f", amountGhc)} disbursed.", Toast.LENGTH_LONG).show()
+            }
+        }
+        return true
     }
 
     fun withholdStaffPayment(staffId: Long, reason: String) {
@@ -837,7 +1125,7 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     private val _msgChannel = MutableStateFlow("WHATSAPP") // "SMS", "WHATSAPP"
     val msgChannel: StateFlow<String> = _msgChannel.asStateFlow()
 
-    private val _msgText = MutableStateFlow("Notice: Akoma Academy PTA meeting is scheduled for Saturday at 10:00 AM.")
+    private val _msgText = MutableStateFlow("Notice: St. Talafor Academy PTA meeting is scheduled for Saturday at 10:00 AM.")
     val msgText: StateFlow<String> = _msgText.asStateFlow()
 
     fun setMsgTargetType(type: String) { _msgTargetType.value = type }
@@ -954,7 +1242,7 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             repository.logClockIn(log)
-            Toast.makeText(context, "Successfully Logged $actionType at Akoma Campus!", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Successfully Logged $actionType at St. Talafor Campus!", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1139,6 +1427,23 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
                     title = "Fee Collection Logged",
                     message = "GH₵ ${String.format("%.2f", amountGhc)} collected for ${payment.studentName} (${payment.className}). Ref: ${payment.transactionRef}."
                 )
+                val receipt = OfficialReceipt(
+                    receiptNumber = payment.receiptNumber,
+                    title = "STUDENT FEE PAYMENT RECEIPT",
+                    schoolName = "St. Talafor Primary & JHS",
+                    recipientName = payment.studentName,
+                    subDetail = "Class: ${payment.className}",
+                    payerOrGuardian = "Guardian: ${payment.guardianName}",
+                    amountGhc = amountGhc,
+                    paymentMethod = paymentMethod,
+                    transactionRef = payment.transactionRef,
+                    paymentDate = payment.paymentDate,
+                    feeCategoryOrMemo = "$feeCategory ($academicTerm)",
+                    remainingBalanceGhc = payment.remainingBalanceGhc,
+                    authorizedBy = "School Bursar / Proprietor",
+                    notes = notes
+                )
+                _activeReceipt.value = receipt
                 Toast.makeText(context, "Payment of GH₵ ${String.format("%.2f", amountGhc)} recorded! Receipt: ${payment.receiptNumber}", Toast.LENGTH_LONG).show()
             }
         }
@@ -1360,6 +1665,36 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // Official Downloadable Receipt State
+    private val _activeReceipt = MutableStateFlow<OfficialReceipt?>(null)
+    val activeReceipt: StateFlow<OfficialReceipt?> = _activeReceipt.asStateFlow()
+
+    fun showReceipt(receipt: OfficialReceipt) {
+        _activeReceipt.value = receipt
+    }
+
+    fun dismissActiveReceipt() {
+        _activeReceipt.value = null
+    }
+
+    // Media Download State (for Audio, Video, Documents)
+    private val _downloadedMediaResource = MutableStateFlow<DigitalResource?>(null)
+    val downloadedMediaResource: StateFlow<DigitalResource?> = _downloadedMediaResource.asStateFlow()
+
+    fun downloadDigitalResourceMedia(resource: DigitalResource) {
+        viewModelScope.launch {
+            showLoading("Downloading '${resource.title}' (${resource.fileFormat})...")
+            kotlinx.coroutines.delay(800)
+            hideLoading()
+            _downloadedMediaResource.value = resource
+            Toast.makeText(context, "'${resource.title}.${resource.fileFormat.lowercase(Locale.ROOT)}' downloaded to device storage!", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun dismissDownloadedMedia() {
+        _downloadedMediaResource.value = null
+    }
+
     // MoMo Payment State
     private val _showMomoDialog = MutableStateFlow(false)
     val showMomoDialog: StateFlow<Boolean> = _showMomoDialog.asStateFlow()
@@ -1376,6 +1711,12 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     private val _momoReference = MutableStateFlow("Term 3 Balance")
     val momoReference: StateFlow<String> = _momoReference.asStateFlow()
 
+    private val _momoPin = MutableStateFlow("4321")
+    val momoPin: StateFlow<String> = _momoPin.asStateFlow()
+
+    private val _momoPaymentDate = MutableStateFlow(SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date()))
+    val momoPaymentDate: StateFlow<String> = _momoPaymentDate.asStateFlow()
+
     private val _isProcessingMomo = MutableStateFlow(false)
     val isProcessingMomo: StateFlow<Boolean> = _isProcessingMomo.asStateFlow()
 
@@ -1383,6 +1724,7 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         if (defaultAmountGhc > 0) {
             _momoAmount.value = defaultAmountGhc.toInt().toString()
         }
+        _momoPaymentDate.value = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date())
         _showMomoDialog.value = true
     }
 
@@ -1395,6 +1737,8 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     fun setMomoPhone(phone: String) { _momoPhone.value = phone }
     fun setMomoAmount(amount: String) { _momoAmount.value = amount }
     fun setMomoReference(ref: String) { _momoReference.value = ref }
+    fun setMomoPin(pin: String) { _momoPin.value = pin }
+    fun setMomoPaymentDate(date: String) { _momoPaymentDate.value = date }
 
     fun submitMomoPayment() {
         val amountVal = _momoAmount.value.toDoubleOrNull() ?: 0.0
@@ -1413,12 +1757,14 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
             kotlinx.coroutines.delay(1800)
 
             val studentId = _selectedStudentId.value
+            val pDate = _momoPaymentDate.value
             val txn = repository.processMomoPayment(
                 studentId = studentId,
                 amountGhc = amountVal,
                 method = _momoNetwork.value,
                 phone = _momoPhone.value,
-                reference = _momoReference.value
+                reference = _momoReference.value,
+                paymentDate = pDate
             )
 
             // Notify Guardian
@@ -1437,9 +1783,114 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
                 message = "Received GH₵ ${"%.2f".format(amountVal)} via ${_momoNetwork.value} for Student ID #$studentId."
             )
 
+            // Generate downloadable Official Receipt
+            val ledger = currentStudentLedger.value
+            val newBal = (ledger?.balanceGhc?.minus(amountVal))?.coerceAtLeast(0.0) ?: 0.0
+            val receipt = OfficialReceipt(
+                receiptNumber = "RCP-${System.currentTimeMillis().toString().takeLast(6)}",
+                title = "STUDENT FEE PAYMENT RECEIPT",
+                schoolName = "St. Talafor Primary & JHS",
+                recipientName = ledger?.studentName ?: "Student ID #$studentId",
+                subDetail = "Class: ${ledger?.className ?: "JHS 2 - Gold"}",
+                payerOrGuardian = "Guardian: ${ledger?.guardianName ?: "Parent"} (${_momoPhone.value})",
+                amountGhc = amountVal,
+                paymentMethod = _momoNetwork.value,
+                transactionRef = txn.transactionRef,
+                paymentDate = pDate,
+                feeCategoryOrMemo = "Tuition & School Fees (${_momoReference.value})",
+                remainingBalanceGhc = newBal,
+                authorizedBy = "Guardian Mobile Money (PIN Verified)",
+                notes = "Ref: ${_momoReference.value}"
+            )
+            _activeReceipt.value = receipt
+
             _isProcessingMomo.value = false
             _showMomoDialog.value = false
             Toast.makeText(context, "Payment Received! Official MoMo Receipt Generated.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun receiveGuardianPaymentByStudentAndClass(
+        studentId: Long,
+        studentName: String,
+        className: String,
+        guardianName: String,
+        amountGhc: Double,
+        paymentDate: String,
+        paymentMethod: String,
+        feeCategory: String,
+        notes: String
+    ) {
+        viewModelScope.launch {
+            showLoading("Recording guardian fee payment...")
+            val feePayment = repository.recordStudentFeePayment(
+                studentId = studentId,
+                amountGhc = amountGhc,
+                paymentMethod = paymentMethod,
+                feeCategory = feeCategory,
+                academicTerm = "Term 3",
+                notes = notes,
+                recordedBy = "Proprietor / Bursary Office",
+                paymentDate = paymentDate
+            )
+            hideLoading()
+            if (feePayment != null) {
+                val receipt = OfficialReceipt(
+                    receiptNumber = feePayment.receiptNumber,
+                    title = "STUDENT FEE PAYMENT RECEIPT",
+                    schoolName = "St. Talafor Primary & JHS",
+                    recipientName = studentName,
+                    subDetail = "Class: $className",
+                    payerOrGuardian = "Guardian: $guardianName",
+                    amountGhc = amountGhc,
+                    paymentMethod = paymentMethod,
+                    transactionRef = feePayment.transactionRef,
+                    paymentDate = paymentDate,
+                    feeCategoryOrMemo = feeCategory,
+                    remainingBalanceGhc = feePayment.remainingBalanceGhc,
+                    authorizedBy = "Dr. Kwabena Mensah (School Proprietor)",
+                    notes = notes
+                )
+                _activeReceipt.value = receipt
+                Toast.makeText(context, "Payment received & official receipt generated!", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // --- Academic Promotion & Demotion Operations ---
+    fun promoteStudent(studentId: Long, targetClass: String) {
+        viewModelScope.launch {
+            showLoading("Promoting student to $targetClass...")
+            repository.promoteStudent(studentId, targetClass)
+            hideLoading()
+            Toast.makeText(context, "Student promoted to $targetClass!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun demoteStudent(studentId: Long, targetClass: String) {
+        viewModelScope.launch {
+            showLoading("Reassigning student to $targetClass...")
+            repository.demoteStudent(studentId, targetClass)
+            hideLoading()
+            Toast.makeText(context, "Student reassigned to $targetClass.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun promoteClass(currentClassName: String, targetClassName: String) {
+        viewModelScope.launch {
+            showLoading("Promoting class $currentClassName to $targetClassName...")
+            repository.promoteEntireClass(currentClassName, targetClassName)
+            hideLoading()
+            Toast.makeText(context, "All students in $currentClassName promoted to $targetClassName!", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun demoteClass(currentClassName: String, targetClassName: String) {
+        viewModelScope.launch {
+            showLoading("Reassigning class $currentClassName to $targetClassName...")
+            repository.demoteEntireClass(currentClassName, targetClassName)
+            hideLoading()
+            Toast.makeText(context, "Class $currentClassName reassigned to $targetClassName.", Toast.LENGTH_SHORT).show()
         }
     }
 

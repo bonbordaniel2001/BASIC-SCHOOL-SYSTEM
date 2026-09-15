@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -92,6 +94,7 @@ fun TeacherScreen(
 
     val allGrades by viewModel.allGrades.collectAsState()
     val studentLedgers by viewModel.allStudentLedgers.collectAsState()
+    val allStudentProfiles by viewModel.allStudentProfiles.collectAsState()
     val allLessonPlans by viewModel.allLessonPlans.collectAsState()
     val allTimetables by viewModel.allTimetables.collectAsState()
     val allTeacherLoanRequests by viewModel.allTeacherLoanRequests.collectAsState()
@@ -101,7 +104,15 @@ fun TeacherScreen(
     val uiLoadingState by viewModel.uiLoadingState.collectAsState()
     val loadingMessage by viewModel.loadingMessage.collectAsState()
 
+    val teacherTargetTab by viewModel.teacherTargetTab.collectAsState()
     var activeTeacherTab by remember { mutableStateOf(0) } // 0: Attendance, 1: Gradebook, 2: Lesson Plans, 3: Timetable, 4: Loan Request, 5: Parent Messaging, 6: Pay Receipts, 7: Digital Library, 8: Class Assignments
+
+    LaunchedEffect(teacherTargetTab) {
+        teacherTargetTab?.let { target ->
+            activeTeacherTab = target
+            viewModel.clearTeacherTargetTab()
+        }
+    }
 
     // Teacher Digital Library & Assignment Upload States
     val teacherAssignedClass = "JHS 2 - Gold"
@@ -181,6 +192,95 @@ fun TeacherScreen(
     var showAttendanceSummaryReportDialog by remember { mutableStateOf(false) }
     var summaryReportClassFilter by remember { mutableStateOf("JHS 2 - Gold") }
     var summaryReportPeriodFilter by remember { mutableStateOf("ALL") }
+
+    // Academic Promotion / Demotion State
+    val activeUserAccount by viewModel.activeUserAccount.collectAsState()
+    var showClassPromotionDialog by remember { mutableStateOf(false) }
+    val downloadedMediaResource by viewModel.downloadedMediaResource.collectAsState()
+    var playingMediaResource by remember { mutableStateOf<DigitalResource?>(null) }
+
+    if (showClassPromotionDialog) {
+        val teacherName = activeUserAccount?.fullName ?: "Class Teacher"
+        com.example.ui.components.ClassPromotionDialog(
+            userRole = "Teacher",
+            allStudents = allStudentProfiles,
+            onDismiss = { showClassPromotionDialog = false },
+            onPromoteStudent = { studentId, targetClass ->
+                viewModel.promoteStudent(studentId, targetClass)
+            },
+            onDemoteStudent = { studentId, targetClass ->
+                viewModel.demoteStudent(studentId, targetClass)
+            },
+            onPromoteClass = { currentClass, targetClass ->
+                viewModel.promoteClass(currentClass, targetClass)
+            },
+            onDemoteClass = { currentClass, targetClass ->
+                viewModel.demoteClass(currentClass, targetClass)
+            },
+            onRequestPromoteClass = { currentClass, targetClass, reason ->
+                viewModel.submitTeacherPromotionDemotionRequest(
+                    studentId = null,
+                    studentName = null,
+                    currentClass = currentClass,
+                    targetClass = targetClass,
+                    isDemotion = false,
+                    isClassWide = true,
+                    reason = reason,
+                    teacherName = teacherName
+                )
+            },
+            onRequestDemoteClass = { currentClass, targetClass, reason ->
+                viewModel.submitTeacherPromotionDemotionRequest(
+                    studentId = null,
+                    studentName = null,
+                    currentClass = currentClass,
+                    targetClass = targetClass,
+                    isDemotion = true,
+                    isClassWide = true,
+                    reason = reason,
+                    teacherName = teacherName
+                )
+            },
+            onRequestPromoteStudent = { studentId, studentName, currentClass, targetClass, reason ->
+                viewModel.submitTeacherPromotionDemotionRequest(
+                    studentId = studentId,
+                    studentName = studentName,
+                    currentClass = currentClass,
+                    targetClass = targetClass,
+                    isDemotion = false,
+                    isClassWide = false,
+                    reason = reason,
+                    teacherName = teacherName
+                )
+            },
+            onRequestDemoteStudent = { studentId, studentName, currentClass, targetClass, reason ->
+                viewModel.submitTeacherPromotionDemotionRequest(
+                    studentId = studentId,
+                    studentName = studentName,
+                    currentClass = currentClass,
+                    targetClass = targetClass,
+                    isDemotion = true,
+                    isClassWide = false,
+                    reason = reason,
+                    teacherName = teacherName
+                )
+            }
+        )
+    }
+
+    if (downloadedMediaResource != null) {
+        com.example.ui.components.DownloadedMediaDialog(
+            resource = downloadedMediaResource!!,
+            onDismiss = { viewModel.dismissDownloadedMedia() }
+        )
+    }
+
+    if (playingMediaResource != null) {
+        com.example.ui.components.InAppMediaViewerDialog(
+            resource = playingMediaResource!!,
+            onDismiss = { playingMediaResource = null }
+        )
+    }
 
     // Request Add Student Dialog
     if (showRequestAddStudentDialog) {
@@ -353,13 +453,14 @@ fun TeacherScreen(
 
                     val targetClassStudents = studentLedgers.filter { it.className == inputDailyAttendanceClass }
 
-                    LazyColumn(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 280.dp),
+                            .heightIn(max = 280.dp)
+                            .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(targetClassStudents) { st ->
+                        targetClassStudents.forEach { st ->
                             val currentStatus = dailyAttendanceStatusMap[st.studentId] ?: "PRESENT"
                             val currentRemark = dailyAttendanceRemarksMap[st.studentId] ?: ""
 
@@ -588,13 +689,14 @@ fun TeacherScreen(
 
                     Text("Student Attendance Summary Roster:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
 
-                    LazyColumn(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 240.dp),
+                            .heightIn(max = 240.dp)
+                            .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(classStudents) { st ->
+                        classStudents.forEach { st ->
                             val stRecords = classDailyRecords.filter { it.studentId == st.studentId }
                             val stTotal = if (stRecords.isNotEmpty()) stRecords.size else 5
                             val stPresent = if (stRecords.isNotEmpty()) stRecords.count { it.isPresent || it.status == "PRESENT" } else 5
@@ -1163,6 +1265,19 @@ fun TeacherScreen(
                             Text("Lesson Plans", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = { showClassPromotionDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("teacher_open_promotion_dialog_button")
+                    ) {
+                        Icon(Icons.Default.School, contentDescription = null, tint = GhanaGoldAccent, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Promote / Demote Students or Class", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -1286,7 +1401,7 @@ fun TeacherScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Akoma Campus GPS (8.5945° N, 0.2366° E)",
+                                    text = "St. Talafor Campus GPS (8.5945° N, 0.2366° E)",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1371,7 +1486,7 @@ fun TeacherScreen(
                         ) {
                             Icon(imageVector = Icons.Default.AccessTime, contentDescription = null)
                             Text(
-                                text = if (isWithinGeofence) "Clock-In to Akoma Campus" else "Clock-In Locked (Get Closer to Campus)",
+                                text = if (isWithinGeofence) "Clock-In to St. Talafor Campus" else "Clock-In Locked (Get Closer to Campus)",
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -3360,18 +3475,31 @@ fun TeacherScreen(
                                                     Text("Publisher: ${res.authorOrPublisher} • Format: ${res.fileFormat}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
 
-                                                Button(
-                                                    onClick = {
-                                                        viewModel.triggerPortalDataRefresh("Downloading '${res.title}' (${res.fileFormat})...")
-                                                    },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                    modifier = Modifier.testTag("download_resource_${res.id}")
-                                                ) {
-                                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Download", fontSize = 11.sp)
+                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    Button(
+                                                        onClick = {
+                                                            viewModel.downloadDigitalResourceMedia(res)
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = GhanaNavyPrimary),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                        modifier = Modifier.testTag("download_resource_${res.id}")
+                                                    ) {
+                                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Download", fontSize = 11.sp)
+                                                    }
+
+                                                    OutlinedButton(
+                                                        onClick = { playingMediaResource = res },
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                        modifier = Modifier.testTag("play_resource_${res.id}")
+                                                    ) {
+                                                        Icon(if (res.resourceType == "DOCUMENT") Icons.Default.MenuBook else Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text(if (res.resourceType == "DOCUMENT") "Read in App" else "Play on App", fontSize = 11.sp)
+                                                    }
                                                 }
                                             }
 
@@ -3657,7 +3785,7 @@ fun TeacherScreen(
                     Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = GhanaNavyPrimary)
                     Column {
                         Text("Official Staff Pay Advice", fontWeight = FontWeight.Bold, color = GhanaNavyPrimary, fontSize = 16.sp)
-                        Text("Akoma Academy Payroll Office", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("St. Talafor Academy Payroll Office", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             },

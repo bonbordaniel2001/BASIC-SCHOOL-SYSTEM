@@ -26,7 +26,7 @@ import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.ProprietorScreen
 import com.example.ui.screens.SchoolCalendarScreen
 import com.example.ui.screens.TeacherScreen
-import com.example.ui.theme.AkomaSchoolTheme
+import com.example.ui.theme.StTalaforSchoolTheme
 import com.example.ui.viewmodel.SchoolViewModel
 import com.example.ui.viewmodel.ViewMode
 
@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            AkomaSchoolTheme {
+            StTalaforSchoolTheme {
                 val activeMode by viewModel.activeViewMode.collectAsState()
                 val schoolName by viewModel.schoolName.collectAsState()
                 val activeUserAccount by viewModel.activeUserAccount.collectAsState()
@@ -78,7 +78,10 @@ class MainActivity : ComponentActivity() {
                         onDismissRequest = { viewModel.toggleNotificationCenter() },
                         onMarkRead = { id -> viewModel.markNotificationRead(id) },
                         onMarkAllRead = { viewModel.markAllNotificationsRead() },
-                        onClearAll = { viewModel.clearNotifications() }
+                        onClearAll = { viewModel.clearNotifications() },
+                        onNotificationClick = { notification ->
+                            viewModel.navigateToAppropriatePortal(notification)
+                        }
                     )
                 }
 

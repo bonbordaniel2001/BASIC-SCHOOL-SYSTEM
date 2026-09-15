@@ -281,7 +281,7 @@ class AlumniRepository(private val alumniDao: AlumniDao) {
                 AlumniChatMessage(
                     senderName = "Daniel Akuffo (Alumni Admin)",
                     senderRole = "ALUMNI_ADMIN",
-                    messageText = "Welcome fellow Akoma graduates to our official Alumni Network Hub!",
+                    messageText = "Welcome fellow St. Talafor graduates to our official Alumni Network Hub!",
                     mediaType = "TEXT",
                     timestampString = "08:30 AM"
                 ),
@@ -299,7 +299,7 @@ class AlumniRepository(private val alumniDao: AlumniDao) {
                     senderRole = "ALUMNI_MEMBER",
                     messageText = "Uploading the official 2025 Alumni Transcript & Constitution Document.",
                     mediaType = "DOCUMENT",
-                    fileName = "Akoma_Alumni_Constitution_2025.pdf",
+                    fileName = "St_Talafor_Alumni_Constitution_2025.pdf",
                     timestampString = "09:12 AM"
                 )
             )

@@ -445,7 +445,7 @@ fun AuthDialog(
                                     onSwitchExistingUser(
                                         UserAccount(
                                             fullName = "Dr. Kwabena Mensah",
-                                            email = "proprietor@akoma.edu.gh",
+                                            email = "proprietor@sttalafor.edu.gh",
                                             phone = "0244987654",
                                             role = "PROPRIETOR",
                                             schoolName = currentSchoolName,
@@ -466,7 +466,7 @@ fun AuthDialog(
                                     onSwitchExistingUser(
                                         UserAccount(
                                             fullName = "Mr. Kojo Mensah",
-                                            email = "kojo.mensah@akoma.edu.gh",
+                                            email = "kojo.mensah@sttalafor.edu.gh",
                                             phone = "0208112233",
                                             role = "TEACHER",
                                             schoolName = currentSchoolName,
@@ -623,7 +623,7 @@ fun AuthDialog(
                                     onValueChange = { schoolNameInput = it },
                                     label = { Text("School / Institution Name") },
                                     leadingIcon = { Icon(Icons.Default.AccountBalance, contentDescription = null) },
-                                    placeholder = { Text("e.g. Akoma Primary & JHS") },
+                                    placeholder = { Text("e.g. St. Talafor Primary & JHS") },
                                     singleLine = true,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -644,7 +644,7 @@ fun AuthDialog(
                         Button(
                             onClick = {
                                 val name = if (fullName.isBlank()) "New $selectedRole" else fullName
-                                val mail = if (email.isBlank()) "${selectedRole.lowercase()}@akoma.edu.gh" else email
+                                val mail = if (email.isBlank()) "${selectedRole.lowercase()}@sttalafor.edu.gh" else email
                                 onSignUpOrLogin(name, mail, phone, selectedRole, schoolNameInput)
                             },
                             modifier = Modifier
